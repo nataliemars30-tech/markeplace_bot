@@ -1,42 +1,31 @@
-# Деплой бота REN на Railway (исправленная версия)
+# REN Marketplace Bot
 
-## Структура
-- `Dockerfile` — образ Python 3.12, без лишних пакетов
-- `app/bot.py` — код бота (контракт: env-переменные, SQLite в /app/data, health-сервер)
-- `app/health.py` — отвечает `ok` на `/` (защита от «засыпания» Railway)
-- `data/` — сюда монтируется Volume (SQLite)
+Telegram-бот автоматизации витрин цветочного магазина REN (Санкт-Петербург).
+Сотрудник отправляет фото + цены + номер заказа МойСклада → бот считает
+себестоимость, присваивает артикул, создаёт товар на Flowwow, складывает
+фото на Яндекс Диск и пишет строку в Google-таблицу.
 
-## Шаги
+## Модули
+- `bot.py` — мастер создания товара (FSM, белый список ID, приём медиагрупп)
+- `flowwow_api.py` — создание товаров по Seller API Flowwow
+- `moysklad_api.py` — себестоимость из заказа покупателя (закупочные цены позиций)
+- `yandex_disk.py` — хранение фото/видео, публикация прямых ссылок
+- `sheets_api.py` — листы категорий в Google-таблице (ключ из env или файла)
+- `platform_rules.py` — категории Flowwow, коды ОКПД2, расчёт маржи
+- `db.py` — SQLite: счётчики артикулов (REN-, REN-W-, REN-C-, REN-D-, REN-A-), история
 
-1. **GitHub**: создать приватный репозиторий `flowwow-bot`.
-2. **Локально** (в папке проекта):
-   ```cmd
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/ВАШ_АККАУНТ/flowwow-bot.git
-   git push -u origin main
-   ```
-3. **Railway**: New Project → Deploy from GitHub repo → выбрать `flowwow-bot` → Deploy.
-   Тип сервиса: Web Service (health-сервер на порту 8080 держит его живым).
-4. **Volume**: Settings → Volumes → Add Volume → Mount Path: `/app/data`.
-5. **Variables** (вкладка Variables):
-   | Переменная | Значение |
-   |---|---|
-   | `TELEGRAM_BOT_TOKEN` | токен от @BotFather |
-   | `TELEGRAM_ALLOWED_IDS` | Telegram ID через запятую |
-   | `FLOWWOW_TOKEN` | токен Flowwow API |
-   | `FLOWWOW_SHOP_ID` | `222976` |
-   | `MOYSKLAD_TOKEN` | токен МойСклад |
-   | `YANDEX_MARKET_API_KEY` | ключ Маркета (ACMA:...) |
-   | `GOOGLE_CREDENTIALS_JSON` | весь JSON сервисного аккаунта одной строкой |
-   | `GOOGLE_SPREADSHEET_KEY` | ID Google-таблицы |
-   | `YANDEX_DISK_TOKEN` | токен Яндекс Диск (для фото) |
+## Запуск локально
+1. `pip install -r requirements.txt`
+2. Скопируй `.env.example` → `.env`, заполни токены
+3. `python bot.py`
 
-   ВАЖНО: `google_credentials.json` в Git не коммитить — только переменная окружения.
-6. **Проверка**: View Logs → ожидаем «Запуск бота...» → в Telegram `/start`.
+## Деплой на Railway
+1. Приватный репозиторий на GitHub → Deploy from GitHub repo
+2. Volume: Mount Path `/app/data` (SQLite не сбрасывается)
+3. Variables: все из `.env.example`, Google-ключ — в `GOOGLE_CREDENTIALS_JSON` одной строкой
+4. Dockerfile включает ffmpeg (удаление звука из видео)
 
-## Деньги
-Бесплатного тарифа у Railway нет: пробный кредит ~$5, далее от ~$5/мес.
-Альтернатива дешевле: VPS (~250₽/мес), тот же Docker-образ, деплой любым удобным способом.
+## Заметки
+- Бот отвечает только ID из `TELEGRAM_ALLOWED_IDS`
+- Яндекс Еда создаётся вручную/через отдельный процесс (статус «в очереди» в таблице)
+- Товар на Flowwow создаётся выключенным (isActive=false) — включение после проверки карточки

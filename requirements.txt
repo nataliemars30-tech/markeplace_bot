@@ -1,5 +1,7 @@
-aiogram>=3.7
-aiohttp>=3.9
-gspread>=6.1
-google-auth>=2.30
-requests>=2.32
+aiogram>=3.17.0
+httpx>=0.28.1
+pydantic>=2.10.6
+pydantic-settings>=2.7.1
+python-dotenv>=1.0.1
+gspread>=6.1.4
+google-auth>=2.38.0
