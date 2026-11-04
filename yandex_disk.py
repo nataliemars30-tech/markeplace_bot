@@ -1,5 +1,6 @@
 """Интеграция с Яндекс Диском для сохранения фото и видео высокого качества."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -63,14 +64,20 @@ class YandexDiskClient:
             if upload_resp.status_code not in (200, 201, 202):
                 raise YandexDiskError(f"Ошибка загрузки файла на Яндекс Диск: {upload_resp.status_code}")
 
-            # 3. Публикация файла
-            pub_resp = await client.put(
-                f"{self.BASE_URL}/publish",
-                headers=self._get_headers(),
-                params={"path": disk_path}
-            )
-            if pub_resp.status_code not in (200, 409):
-                logger.warning(f"Предупреждение при публикации {disk_path}: {pub_resp.text}")
+            # 3. Публикация файла (с повторными попытками — Диск иногда отвечает 500)
+            public_url = None
+            for attempt in range(3):
+                pub_resp = await client.put(
+                    f"{self.BASE_URL}/publish",
+                    headers=self._get_headers(),
+                    params={"path": disk_path}
+                )
+                if pub_resp.status_code in (200, 201, 409):
+                    break
+                logger.warning(f"Публикация {disk_path}: попытка {attempt + 1} — {pub_resp.status_code}")
+                await asyncio.sleep(2 * (attempt + 1))
+            else:
+                logger.warning(f"Не удалось опубликовать {disk_path} после 3 попыток")
 
             # 4. Получение публичной ссылки
             meta_resp = await client.get(

@@ -407,7 +407,8 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
     fw_results = []
     for var in variations:
         full_art = f"{base_article}-{var['label']}"
-        fw_name = f"{name} {var['label']} ({full_art})"
+        # Артикул НЕ включаем в название: он хранится в offerId (виден только кабинету)
+        fw_name = f"{name} {var['label']}"
 
         # Состав из позиций заказа МойСклад
         consist = [
