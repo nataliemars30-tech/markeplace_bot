@@ -1,0 +1,15 @@
+venv/
+.env
+__pycache__/
+*.pyc
+.DS_Store
+
+# Бизнес-данные и выгрузки — не для GitHub
+data/*.json
+data/*.csv
+!data/.gitkeep
+
+# Ключи сервисных аккаунтов — ТОЛЬКО через переменные окружения
+google_credentials.json
+*.pem
+*.key
