@@ -57,11 +57,11 @@ class YandexDiskClient:
 
             upload_url = upload_link_resp.json().get("href")
 
-            # 2. Передача бинарных данных файла
-            with open(local_path, "rb") as f:
-                upload_resp = await client.put(upload_url, content=f)
-                if upload_resp.status_code not in (200, 201, 202):
-                    raise YandexDiskError(f"Ошибка загрузки файла на Яндекс Диск: {upload_resp.status_code}")
+            # 2. Передача бинарных данных файла (AsyncClient требует bytes, не file-object)
+            file_data = Path(local_path).read_bytes()
+            upload_resp = await client.put(upload_url, content=file_data)
+            if upload_resp.status_code not in (200, 201, 202):
+                raise YandexDiskError(f"Ошибка загрузки файла на Яндекс Диск: {upload_resp.status_code}")
 
             # 3. Публикация файла
             pub_resp = await client.put(
