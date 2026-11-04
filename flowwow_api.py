@@ -37,60 +37,56 @@ class FlowwowClient:
         composition: str = "",
         production_time: int = 60,
         width_cm: int = 30,
-        height_cm: int = 40,
-        weight_g: int = 500
+        height_cm: int = 40
     ) -> Dict[str, Any]:
         """
-        Создание товара на Flowwow по спецификации Seller API.
+        Создание товара на Flowwow.
 
-        Обязательные поля карточки (см. subCategoryProperties):
-        offerId, productType, subCategoryId, name, price,
-        productionTime (measure: 7=минуты) ИЛИ stock,
-        minOrderCount, width/height (measure: 3=см),
-        consist (measure: 1=шт), volume (measure: 2=г),
-        composition, quantityInPackage.
-        Фото передаются в поле images (массив URL), первое — обложка.
+        Проверено живыми вызовами (2026-11-04):
+        - Эндпоинт: POST /apiseller/products/create?shopId=<id>
+          (POST /products без /create — это ЛИСТИНГ, молча игнорирует тело!)
+        - Тело: {"products": [ {<поля товара>} ]}, до 500 за раз
+        - Набор допустимых полей зависит от подкатегории
+          (источник: POST /categories/subCategoryProperties).
+          Для букетов (subCategoryId 1-2) поля volume/composition/quantityInPackage
+          НЕДОПУСТИМЫ — API отвечает "Поле недопустимо".
+        - stock и productionTime взаимоисключающие: передаём productionTime.
+        - Ответ: {"summary": {...}, "data": [{"offerId","productId"}], "errors": [...]}
+        - Фото грузятся асинхронно, до 30 мин до появления в интерфейсе.
         """
-        url = f"{self.BASE_URL}/products"
+        url = f"{self.BASE_URL}/products/create?shopId={self.shop_id}"
 
-        payload = {
-            "shopId": self.shop_id,
+        item: Dict[str, Any] = {
+            "offerId": offer_id,
             "productType": 1,
             "subCategoryId": sub_category_id,
-            "offerId": offer_id,
             "name": name,
-            "price": str(int(price)),
-            "discount": 0,
-            "description": composition,
+            "price": f"{int(price)}",
+            "discount": "0",
+            "description": composition or name,
             "images": photo_urls,
             "productionTime": {"val": production_time, "measure": 7},
             "minOrderCount": 1,
             "width": {"val": width_cm, "measure": 3},
             "height": {"val": height_cm, "measure": 3},
-            "consist": consist or [{"name": name, "quantity": 1, "measure": 1}],
-            "volume": {"val": weight_g, "measure": 2},
-            "composition": composition or name,
-            "quantityInPackage": 1,
-            "isActive": False,
-            "stock": 0
+            "consist": consist or [{"name": name, "quantity": 1, "measure": 1}]
         }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                resp = await client.post(url, headers=self._get_headers(), json=payload)
+                resp = await client.post(url, headers=self._get_headers(), json={"products": [item]})
             except httpx.RequestError as e:
                 raise FlowwowAPIError(f"Ошибка сети при обращении к Flowwow: {e}")
 
-            if resp.status_code in (200, 201):
-                res_data = resp.json()
-                flowwow_id = res_data.get("id") or res_data.get("productId") or "created"
-                return {"success": True, "id": str(flowwow_id), "data": res_data}
-
-            err_text = resp.text
             try:
-                err_json = resp.json()
-                err_text = err_json.get("message") or err_json.get("error") or resp.text
+                res_data = resp.json()
             except Exception:
-                pass
+                raise FlowwowAPIError(f"Flowwow вернул не-JSON [{resp.status_code}]: {resp.text[:300]}")
 
-            raise FlowwowAPIError(f"Ошибка валидации Flowwow API [{resp.status_code}]: {err_text}")
+            summary = res_data.get("summary", {})
+            if summary.get("success", 0) >= 1 and res_data.get("data"):
+                product_id = res_data["data"][0].get("productId", "created")
+                return {"success": True, "id": str(product_id), "data": res_data}
+
+            err_details = res_data.get("errors") or res_data.get("message") or resp.text[:300]
+            raise FlowwowAPIError(f"Flowwow не создал товар: {err_details}")
