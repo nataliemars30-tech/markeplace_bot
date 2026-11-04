@@ -73,6 +73,11 @@ media_group_buffers: Dict[str, List[types.Message]] = {}
 media_group_locks: Dict[str, asyncio.Lock] = {}
 
 
+def esc(text: Any) -> str:
+    """Экранирование спецсимволов Markdown для пользовательского ввода."""
+    return re.sub(r"([_*\[\]()~`>#+\-=|{}.!\\])", r"\\\1", str(text))
+
+
 # ------------------ Клавиатуры ------------------
 def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
     """Главная кнопка внизу экрана."""
@@ -176,7 +181,7 @@ async def process_name_input(message: types.Message, state: FSMContext):
     await state.set_state(ProductWizard.entering_sizes_and_orders)
 
     await message.answer(
-        f"Название: **{name}**\n\n"
+        f"Название: **{esc(name)}**\n\n"
         "**Шаг 4 из 5: Укажите размеры, цены и номера заказов МойСклада:**\n\n"
         "Примеры ввода:\n"
         "• Для одного размера:\n`M 4500 заказ 150`\n"
@@ -235,7 +240,7 @@ async def process_sizes_input(message: types.Message, state: FSMContext):
     await state.set_state(ProductWizard.waiting_for_files)
 
     vars_preview = "\n".join([
-        f"• **{v['label']}**: Цена {v['price']:.0f}₽ | Себестоимость {v['cost_price']:.0f}₽ (Маржа {v['margin_percent']}%)"
+        f"• **{esc(v['label'])}**: Цена {v['price']:.0f}₽ | Себестоимость {v['cost_price']:.0f}₽ (Маржа {v['margin_percent']}%)"
         for v in variations_with_cost
     ])
 
@@ -323,7 +328,7 @@ async def process_incoming_files(messages: List[types.Message], state: FSMContex
     req_cat = fsm_data.get("root_category")
     await messages[0].reply(
         f"📸 Получено {len(photo_docs)} фото (1-е — обложка) + {'видео' if video_doc else 'без видео'}.\n\n"
-        f"Товар: **{req_name}** ({req_cat})\n\n"
+        f"Товар: **{esc(req_name)}** ({esc(req_cat)})\n\n"
         f"Опубликовать карточки на Flowwow, Яндекс Диске и в Google Таблице?",
         reply_markup=kb,
         parse_mode="Markdown"
@@ -470,7 +475,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
 
     shutil.rmtree(temp_work_dir, ignore_errors=True)
 
-    fw_summary = "\n".join([f"• {r}" for r in fw_results])
+    fw_summary = "\n".join([f"• {esc(r)}" for r in fw_results])
     sheets_note = "" if sheets_ok else "\n⚠️ Запись в Google-таблицу не удалась (см. логи)"
     report_text = (
         f"✅ **Товар зарегистрирован! Артикул: {base_article}**\n\n"
