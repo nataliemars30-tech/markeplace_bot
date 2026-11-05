@@ -216,7 +216,7 @@ async def process_name_input(message: types.Message, state: FSMContext):
         "**Шаг 4 из 5: Укажите размеры и источник базовой цены:**\n\n"
         "• **Авторские букеты** — укажите размер и номер заказа МойСклада:\n"
         "`S заказ 150, M заказ 151, L заказ 152`\n"
-        "(цены не вводим: бот возьмёт себестоимость из заказа и сам начислит наценки)\n\n"
+        "(цены не вводим: бот возьмёт продажную сумму заказа и сам начислит наценки)\n\n"
         "• **Авторские с ручной ценой** — цена = база:\n"
         "`S 3900 заказ 150, M 5600 заказ 151`\n\n"
         "• **Монобукеты** — цена за 1 стебель и варианты:\n"
@@ -280,12 +280,13 @@ async def process_sizes_input(message: types.Message, state: FSMContext):
                 order_no = var.get("order_no", "")
                 if order_no:
                     order_data = await ms_client.get_customer_order_details(order_no)
-                    cost = order_data["cost_price"]
+                    sell = order_data["selling_sum"]   # база = ПРОДАЖНАЯ сумма заказа
+                    cost = order_data["cost_price"]    # закупочная — для маржи/отчётов
                     positions = order_data["positions"]
                 else:
-                    order_data, cost, positions = None, 0.0, []
-                # База: ручная цена, если введена, иначе себестоимость из заказа
-                base = var.get("entered_price") or cost
+                    order_data, sell, cost, positions = None, 0.0, 0.0, []
+                # База: ручная цена, если введена, иначе ПРОДАЖНАЯ сумма заказа
+                base = var.get("entered_price") or sell
                 resolved.append({
                     "label": var["label"],
                     "base_price": base,
