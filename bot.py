@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton
+    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 )
 from aiohttp import web
 
@@ -124,6 +124,8 @@ async def start_photo_server() -> None:
 @dp.message(Command("start"))
 @dp.message(F.text == "❓ Помощь")
 async def cmd_start(message: types.Message):
+    # ReplyKeyboardRemove принудительно сбрасывает закэшированную клиентом старую клавиатуру
+    await message.answer("⌨️ Обновляю меню…", reply_markup=ReplyKeyboardRemove())
     await message.answer(
         "🌸 <b>Бот автоматизации витрин REN</b>\n\n"
         "Используйте кнопки внизу экрана. Все промежуточные выборы делаются в меню клавиатуры, "
