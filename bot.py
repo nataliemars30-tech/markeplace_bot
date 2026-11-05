@@ -275,15 +275,21 @@ async def process_sizes_input(message: types.Message, state: FSMContext):
             raw_text, re.I
         )
         for label, price_str, order_no in matches:
+            lab = label.upper()
+            # защита от сценария "заказ 00350" без размера: regex ловит слово "заказ" как размер
+            if lab in ("ЗАКАЗ", "ЗАК", "ШТ", "РАЗМЕР", "РУБ", "₽"):
+                continue
+            # offerId Flowwow: только латиница, цифры, - и _
+            lab = re.sub(r"[^A-Z0-9]", "", lab) or "M"
             variations.append({
-                "label": label.upper(),
+                "label": lab,
                 "entered_price": float(price_str),
                 "order_no": order_no
             })
 
         if not variations:
             await message.reply(
-                "⚠️ Не удалось распознать формат. Примеры:\n"
+                "⚠️ Не удалось распознать размеры. Укажите размер перед заказом:\n"
                 "`S заказ 150, M заказ 151` или `стебель 250: 9, 15, 25, 51`",
                 parse_mode="Markdown"
             )
@@ -517,7 +523,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
 
     fw_results = []
     for var in variations:
-        full_art = f"{base_article}-{var['label']}"
+        full_art = f"{base_article}-{re.sub(r'[^A-Za-z0-9]', '', var['label']) or 'M'}"
         # Артикул НЕ включаем в название: он хранится в offerId (виден только кабинету)
         fw_name = f"{name} {var['label']}"
 
