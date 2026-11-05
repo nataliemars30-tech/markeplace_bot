@@ -92,18 +92,21 @@ def get_public_base_url() -> str:
 
 
 async def start_photo_server() -> None:
-    """HTTP-сервер: отдаёт загруженные фото по /photos/<артикул>/<файл>.
-    Нужен, чтобы Flowwow мог скачать изображения по стабильным прямым ссылкам
-    (ссылки Яндекс Диска временные и для этого не подходят)."""
+    """HTTP-сервер: /photos/<артикул>/<файл> — стабильные ссылки для площадок;
+    /feed.xml — YML-фид для Яндекс Карт (витрина №5)."""
+    from yandex_feed import get_feed_xml
+
     photos_root = config.db_path.parent / "photos"
     photos_root.mkdir(parents=True, exist_ok=True)
     app = web.Application()
     app.router.add_static("/photos/", photos_root, show_index=False)
+    app.router.add_get("/feed.xml", lambda r: web.Response(text=get_feed_xml(), content_type="text/xml"))
+    app.router.add_get("/", lambda r: web.Response(text="ok"))
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.environ.get("PORT", "8080"))
     await web.TCPSite(runner, "0.0.0.0", port).start()
-    logger.info(f"Фото-сервер запущен на порту {port}, корень: {photos_root}")
+    logger.info(f"Фото-сервер и YML-фид запущены на порту {port}")
 
 
 # ------------------ Клавиатуры ------------------

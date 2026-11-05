@@ -1,7 +1,7 @@
 """Слой локальной базы данных SQLite для генерации артикулов и хранения истории."""
 
 import sqlite3
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from config import config
 
 
@@ -116,3 +116,16 @@ def save_product_variation(
             all_photos_json, video_url, created_by_tg_id
         ))
         conn.commit()
+
+
+def get_all_products_for_feed() -> List[Dict[str, Any]]:
+    """Все вариации товаров для YML-фида Яндекс Карт."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT base_article, full_article, root_category, name, variation,
+                   price, cover_url, created_at
+            FROM products
+            ORDER BY id;
+        """)
+        return [dict(row) for row in cursor.fetchall()]
