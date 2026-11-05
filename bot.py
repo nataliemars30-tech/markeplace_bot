@@ -32,6 +32,7 @@ from sheets_api import GoogleSheetsManager
 from media_processor import mute_video_async
 from market_api import YandexMarketClient, YandexMarketError
 from eda_csv import EdaCsvManager, build_eda_row
+from tilda_mcp import TildaCatalog
 from states import ProductCreationFSM, HideFSM
 from keyboards import get_main_reply_keyboard
 import handlers_menu
@@ -64,6 +65,7 @@ fw_client = FlowwowClient()
 sheets_mgr = GoogleSheetsManager()
 market_client = YandexMarketClient()
 eda_csv = EdaCsvManager(config.db_path.parent / "eda_catalog.csv")
+tilda_catalog = TildaCatalog()
 
 media_group_buffers: Dict[str, List[types.Message]] = {}
 media_group_locks: Dict[str, asyncio.Lock] = {}
@@ -522,7 +524,20 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         eda_ok = eda_csv.append_product(eda_row)
         eda_status = "в CSV" if eda_ok else "ошибка записи CSV"
 
-        fw_results.append(f"  ↳ Маркет: {market_status} | Еда: {eda_status} (цена {platform_prices['yandex_eda']}₽)")
+        # --- Tilda: прямое создание через MCP ---
+        tilda_status = await tilda_catalog.create_product(
+            project_id=config.tilda_project_id,
+            title=f"{name} {var['label']}",
+            price_tilda=platform_prices["tilda"],
+            photo_urls=uploaded_photo_urls,
+            tilda_categories=tilda_cats,
+            description=eda_desc,
+            full_article=full_art
+        )
+
+        fw_results.append(
+            f"  ↳ Маркет: {market_status} | Еда: {eda_status} | Tilda: {tilda_status}"
+        )
 
         sheet_payload = {
             "full_article": full_art,

@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Яндекс Маркет
     yandex_market_api_key: str = Field("", alias="YANDEX_MARKET_API_KEY")
 
+    # Tilda MCP (Профиль -> Ключи MCP)
+    tilda_mcp_token: str = Field("", alias="TILDA_MCP_TOKEN")
+    tilda_project_id: int = Field(13756635, alias="TILDA_PROJECT_ID")
+
     # Яндекс Диск
     yandex_disk_token: str = Field(..., alias="YANDEX_DISK_TOKEN")
 
