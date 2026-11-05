@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import shutil
 from pathlib import Path
@@ -17,6 +18,7 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton
 )
+from aiohttp import web
 
 from config import config
 from db import init_db, get_next_article, save_product_variation
@@ -76,6 +78,32 @@ media_group_locks: Dict[str, asyncio.Lock] = {}
 def esc(text: Any) -> str:
     """Экранирование спецсимволов Markdown для пользовательского ввода."""
     return re.sub(r"([_*\[\]()~`>#+\-=|{}.!\\])", r"\\\1", str(text))
+
+
+def get_public_base_url() -> str:
+    """Базовый публичный URL сервиса (Railway) для отдачи фото."""
+    explicit = os.environ.get("PUBLIC_BASE_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
+    if domain:
+        return f"https://{domain}"
+    return ""
+
+
+async def start_photo_server() -> None:
+    """HTTP-сервер: отдаёт загруженные фото по /photos/<артикул>/<файл>.
+    Нужен, чтобы Flowwow мог скачать изображения по стабильным прямым ссылкам
+    (ссылки Яндекс Диска временные и для этого не подходят)."""
+    photos_root = config.db_path.parent / "photos"
+    photos_root.mkdir(parents=True, exist_ok=True)
+    app = web.Application()
+    app.router.add_static("/photos/", photos_root, show_index=False)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", "8080"))
+    await web.TCPSite(runner, "0.0.0.0", port).start()
+    logger.info(f"Фото-сервер запущен на порту {port}, корень: {photos_root}")
 
 
 # ------------------ Клавиатуры ------------------
@@ -366,6 +394,11 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         return
 
     uploaded_photo_urls: List[str] = []
+    photos_dir = config.db_path.parent / "photos" / base_article
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    public_base = get_public_base_url()
+    if not public_base:
+        logger.warning("PUBLIC_BASE_URL/RAILWAY_PUBLIC_DOMAIN не заданы — Flowwow получит ссылки Диска (могут не скачаться)")
     try:
         for idx, (f_id, f_name) in enumerate(zip(photo_file_ids, photo_names), start=1):
             ext = Path(f_name).suffix or ".jpg"
@@ -377,9 +410,14 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             file_obj = await bot.get_file(f_id)
             await bot.download_file(file_obj.file_path, destination=local_path)
 
+            # Стабильная прямая ссылка с нашего сервера (на Volume — переживает рестарты)
+            shutil.copy2(local_path, photos_dir / local_filename)
+            stable_url = f"{public_base}/photos/{base_article}/{local_filename}" if public_base else None
+
+            # Яндекс Диск — архив оригиналов
             yd_path = f"{disk_base_folder}/{local_filename}"
-            public_url = await yd_client.upload_file(local_path, yd_path)
-            uploaded_photo_urls.append(public_url)
+            disk_url = await yd_client.upload_file(local_path, yd_path)
+            uploaded_photo_urls.append(stable_url or disk_url)
     except YandexDiskError as e:
         await status_msg.edit_text(f"❌ **Ошибка загрузки фото на Яндекс Диск:** {e}")
         return
@@ -499,6 +537,8 @@ async def cancel_wizard(callback: types.CallbackQuery, state: FSMContext):
 async def main():
     logger.info("Инициализация локальной базы SQLite...")
     init_db()
+    logger.info("Запуск фото-сервера...")
+    await start_photo_server()
     logger.info("Удаление старого вебхука (если был)...")
     await bot.delete_webhook(drop_pending_updates=True)
     logger.info("Запуск бота...")
