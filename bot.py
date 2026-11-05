@@ -27,7 +27,7 @@ from moysklad_api import MoySkladClient, MoySkladAuthError, MoySkladAPIError
 from flowwow_api import FlowwowClient, FlowwowAPIError
 from platform_rules import (
     ROOT_CATEGORIES, TILDA_BOUQUET_CATEGORIES,
-    get_flowwow_subcategory, get_okpd2_code, calculate_margin
+    get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices
 )
 from sheets_api import GoogleSheetsManager
 from media_processor import mute_video_async
@@ -213,11 +213,14 @@ async def process_name_input(message: types.Message, state: FSMContext):
 
     await message.answer(
         f"Название: **{esc(name)}**\n\n"
-        "**Шаг 4 из 5: Укажите размеры, цены и номера заказов МойСклада:**\n\n"
-        "Примеры ввода:\n"
-        "• Для одного размера:\n`M 4500 заказ 150`\n"
-        "• Для линейки S/M/L:\n`S 3900 заказ 150, M 5600 заказ 151, L 8500 заказ 152`\n"
-        "• Для моно (по штукам):\n`9 4200 заказ 160, 15 6800 заказ 161, 25 10500 заказ 162`",
+        "**Шаг 4 из 5: Укажите размеры и источник базовой цены:**\n\n"
+        "• **Авторские букеты** — укажите размер и номер заказа МойСклада:\n"
+        "`S заказ 150, M заказ 151, L заказ 152`\n"
+        "(цены не вводим: бот возьмёт себестоимость из заказа и сам начислит наценки)\n\n"
+        "• **Авторские с ручной ценой** — цена = база:\n"
+        "`S 3900 заказ 150, M 5600 заказ 151`\n\n"
+        "• **Монобукеты** — цена за 1 стебель и варианты:\n"
+        "`стебель 250: 9, 15, 25, 51`",
         parse_mode="Markdown"
     )
 
@@ -225,58 +228,94 @@ async def process_name_input(message: types.Message, state: FSMContext):
 @dp.message(ProductWizard.entering_sizes_and_orders, F.text)
 async def process_sizes_input(message: types.Message, state: FSMContext):
     raw_text = message.text.strip()
+    fsm = await state.get_data()
+    product_name = fsm.get("name", "Букет")
 
     variations = []
-    matches = re.findall(
-        r"([A-Za-z0-9А-Яа-я]+)\s+(\d+)\s*(?:руб|₽)?\s*(?:заказ|зак\.?)?\s*([A-Za-z0-9-_]+)",
-        raw_text, re.I
-    )
 
-    for label, price_str, order_no in matches:
-        variations.append({
-            "label": label.upper(),
-            "price": float(price_str),
-            "order_no": order_no
-        })
-
-    if not variations:
-        await message.reply(
-            "⚠️ Не удалось распознать формат. Попробуйте еще раз по шаблону:\n"
-            "`M 4500 заказ 150` или `S 3500 заказ 150, M 5200 заказ 151`",
-            parse_mode="Markdown"
-        )
-        return
-
-    status_msg = await message.reply("⏳ Запрашиваю данные из МойСклада...")
-    variations_with_cost = []
-    try:
-        for var in variations:
-            order_data = await ms_client.get_customer_order_details(var["order_no"])
-            cost = order_data["cost_price"]
-            margin = calculate_margin(var["price"], cost)
-            variations_with_cost.append({
-                **var,
-                "cost_price": cost,
-                "margin_percent": margin,
-                "positions": order_data["positions"]
+    # --- Режим монобукета: "стебель 250: 9, 15, 25, 51" ---
+    mono = re.match(r"\s*стебель\s+(\d+)\s*(?:руб|₽)?\s*[:;]\s*(.+)", raw_text, re.I)
+    if mono:
+        stem_price = float(mono.group(1))
+        counts = re.findall(r"\d+", mono.group(2))
+        if not counts:
+            await message.reply("⚠️ После двоеточия укажите варианты: `стебель 250: 9, 15, 25, 51`", parse_mode="Markdown")
+            return
+        for c in counts:
+            qty = int(c)
+            base = stem_price * qty
+            variations.append({
+                "label": str(qty),
+                "base_price": base,
+                "cost_price": base,
+                "margin_percent": 0.0,
+                "order_no": "",
+                "positions": [{"name": product_name, "qty": qty, "buy_price": stem_price}]
             })
-    except MoySkladAuthError as e:
-        await status_msg.edit_text(f"❌ **Ошибка авторизации МойСклад:**\n{e}")
-        return
-    except MoySkladAPIError as e:
-        await status_msg.edit_text(f"❌ **Ошибка МойСклад:**\n{e}")
-        return
+    else:
+        # --- Авторские: "S [цена] заказ 150, M заказ 151" ---
+        matches = re.findall(
+            r"([A-Za-z0-9А-Яа-я]+)\s+(\d+)\s*(?:руб|₽)?\s*(?:заказ|зак\.?)?\s*([A-Za-z0-9-_]*)",
+            raw_text, re.I
+        )
+        for label, price_str, order_no in matches:
+            variations.append({
+                "label": label.upper(),
+                "entered_price": float(price_str),
+                "order_no": order_no
+            })
 
-    await state.update_data(variations=variations_with_cost)
+        if not variations:
+            await message.reply(
+                "⚠️ Не удалось распознать формат. Примеры:\n"
+                "`S заказ 150, M заказ 151` или `стебель 250: 9, 15, 25, 51`",
+                parse_mode="Markdown"
+            )
+            return
+
+        status_msg = await message.reply("⏳ Запрашиваю данные из МойСклада...")
+        resolved = []
+        try:
+            for var in variations:
+                order_no = var.get("order_no", "")
+                if order_no:
+                    order_data = await ms_client.get_customer_order_details(order_no)
+                    cost = order_data["cost_price"]
+                    positions = order_data["positions"]
+                else:
+                    order_data, cost, positions = None, 0.0, []
+                # База: ручная цена, если введена, иначе себестоимость из заказа
+                base = var.get("entered_price") or cost
+                resolved.append({
+                    "label": var["label"],
+                    "base_price": base,
+                    "cost_price": cost,
+                    "margin_percent": calculate_margin(base, cost) if cost else 0.0,
+                    "order_no": order_no,
+                    "positions": positions
+                })
+        except MoySkladAuthError as e:
+            await status_msg.edit_text(f"❌ **Ошибка авторизации МойСклад:**\n{e}")
+            return
+        except MoySkladAPIError as e:
+            await status_msg.edit_text(f"❌ **Ошибка МойСклад:**\n{e}")
+            return
+        variations = resolved
+
+    await state.update_data(variations=variations)
     await state.set_state(ProductWizard.waiting_for_files)
 
-    vars_preview = "\n".join([
-        f"• **{esc(v['label'])}**: Цена {v['price']:.0f}₽ | Себестоимость {v['cost_price']:.0f}₽ (Маржа {v['margin_percent']}%)"
-        for v in variations_with_cost
-    ])
+    lines = []
+    for v in variations:
+        p = calculate_platform_prices(v["base_price"])
+        lines.append(
+            f"• **{esc(v['label'])}**: база {v['base_price']:.0f}₽ → "
+            f"Flowwow {p['flowwow']}₽ | Еда {p['yandex_eda']}₽ | Tilda/Карты {p['tilda']}₽ | Маркет {p['yandex_market']}₽"
+        )
+    preview = "\n".join(lines)
 
-    await status_msg.edit_text(
-        f"✅ **Данные подтверждены:**\n{vars_preview}\n\n"
+    await message.answer(
+        f"✅ **Цены рассчитаны по матрице:**\n{preview}\n\n"
         "**Шаг 5 из 5: Прикрепите файлы букета:**\n"
         "📎 Отправьте через **«Файл» (без сжатия)** от 6 фотографий (первое фото — обложка) + видео (по желанию).",
         parse_mode="Markdown"
@@ -460,10 +499,11 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
 
         fw_status = "создан"
         fw_id = "—"
+        platform_prices = calculate_platform_prices(var["base_price"])
         try:
             res = await fw_client.create_product(
                 name=fw_name,
-                price=var["price"],
+                price=platform_prices["flowwow"],
                 offer_id=full_art,
                 sub_category_id=flowwow_subcat,
                 photo_urls=uploaded_photo_urls,
@@ -475,14 +515,16 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         except FlowwowAPIError as e:
             fw_status = f"ошибка ({e})"
 
-        fw_results.append(f"{var['label']}: Flowwow {fw_status} (id {fw_id})")
+        fw_results.append(
+            f"{var['label']}: база {var['base_price']:.0f}₽ → Flowwow {platform_prices['flowwow']}₽ ({fw_status}, id {fw_id})"
+        )
 
         sheet_payload = {
             "full_article": full_art,
             "name": name,
             "variation": var["label"],
             "flowwow_id": fw_id,
-            "price": var["price"],
+            "price": var["base_price"],
             "cost_price": var["cost_price"],
             "margin_percent": var["margin_percent"],
             "moysklad_order_no": var["order_no"],
@@ -502,7 +544,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             root_category=root_cat,
             name=name,
             variation=var["label"],
-            price=var["price"],
+            price=var["base_price"],
             cost_price=var["cost_price"],
             margin_percent=var["margin_percent"],
             moysklad_order_no=var["order_no"],
