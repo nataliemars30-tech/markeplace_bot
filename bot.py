@@ -107,7 +107,8 @@ async def start_photo_server() -> None:
             return web.Response(text="CSV ещё пуст — создайте товар через бота", status=404)
         return web.Response(
             body=csv_path.read_bytes(),
-            content_type="text/csv; charset=utf-8",
+            content_type="text/csv",
+            charset="utf-8",
             headers={"Content-Disposition": "attachment; filename=eda_catalog.csv"}
         )
 
