@@ -499,15 +499,28 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             f"{var['label']}: база {var['base_price']:.0f}₽ → Flowwow {platform_prices['flowwow']}₽ ({fw_status}, id {fw_id})"
         )
 
+        # --- Яндекс Маркет: полная карточка через business API ---
+        total_flowers = sum(int(p.get("qty", 1)) for p in var.get("positions", [])) or 1
         try:
-            await market_client.create_offer(
+            await market_client.create_card(
                 offer_id=full_art,
                 name=fw_name,
                 price=platform_prices["yandex_market"],
-                picture_urls=uploaded_photo_urls,
-                weight_kg=round(900 / 1000, 2)
+                pictures=uploaded_photo_urls,
+                description=generate_flowwow_description(name, var.get("positions", []), style_word),
+                composition=composition_text,
+                total_flowers=total_flowers,
+                height_cm=var_height,
+                size_label="" if is_mono else var["label"],
+                weight_kg=round((max(300, int(var['label']) * 90) if is_mono and str(var['label']).isdigit()
+                                 else {"S": 600, "M": 900, "L": 1400}.get(str(var['label']).upper(), 900)) / 1000, 2),
+                width_cm=width_cm,
+                length_cm=30,
+                height_pack_cm=max(var_height + 10, 40),
+                okpd2=okpd2_info.get("code", "01.19.21.190"),
+                tnved=okpd2_info.get("tnved", "0603197000")
             )
-            market_status = "создан"
+            market_status = "карточка отправлена (обработка)"
         except YandexMarketError as e:
             market_status = f"ошибка ({e})"
 
