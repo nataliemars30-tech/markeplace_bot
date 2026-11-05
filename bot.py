@@ -32,6 +32,8 @@ from platform_rules import (
 )
 from sheets_api import GoogleSheetsManager
 from media_processor import mute_video_async
+from market_api import YandexMarketClient, YandexMarketError
+from eda_csv import EdaCsvManager, build_eda_row
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -70,6 +72,8 @@ yd_client = YandexDiskClient()
 ms_client = MoySkladClient()
 fw_client = FlowwowClient()
 sheets_mgr = GoogleSheetsManager()
+market_client = YandexMarketClient()
+eda_csv = EdaCsvManager(config.db_path.parent / "eda_catalog.csv")
 
 # Буферы для пачек файлов
 media_group_buffers: Dict[str, List[types.Message]] = {}
@@ -97,11 +101,22 @@ async def start_photo_server() -> None:
     /feed.xml — YML-фид для Яндекс Карт (витрина №5)."""
     from yandex_feed import get_feed_xml
 
+    async def eda_csv_handler(request: web.Request) -> web.Response:
+        csv_path = config.db_path.parent / "eda_catalog.csv"
+        if not csv_path.exists():
+            return web.Response(text="CSV ещё пуст — создайте товар через бота", status=404)
+        return web.Response(
+            body=csv_path.read_bytes(),
+            content_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=eda_catalog.csv"}
+        )
+
     photos_root = config.db_path.parent / "photos"
     photos_root.mkdir(parents=True, exist_ok=True)
     app = web.Application()
     app.router.add_static("/photos/", photos_root, show_index=False)
     app.router.add_get("/feed.xml", lambda r: web.Response(text=get_feed_xml(), content_type="text/xml"))
+    app.router.add_get("/eda.csv", eda_csv_handler)
     app.router.add_get("/", lambda r: web.Response(text="ok"))
     runner = web.AppRunner(app)
     await runner.setup()
@@ -521,6 +536,37 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         fw_results.append(
             f"{var['label']}: база {var['base_price']:.0f}₽ → Flowwow {platform_prices['flowwow']}₽ ({fw_status}, id {fw_id})"
         )
+
+        # --- Яндекс Маркет: только НОВЫЕ товары (DBS-кампания) ---
+        market_status = "—"
+        try:
+            await market_client.create_offer(
+                offer_id=full_art,
+                name=fw_name,
+                price=platform_prices["yandex_market"],
+                picture_urls=uploaded_photo_urls,
+                weight_kg=round((max(300, int(var['label']) * 90) if is_mono and var['label'].isdigit()
+                                 else {"S": 600, "M": 900, "L": 1400}.get(var['label'].upper(), 900)) / 1000, 2)
+            )
+            market_status = "создан"
+        except YandexMarketError as e:
+            market_status = f"ошибка ({e})"
+
+        # --- Яндекс Еда: строка в CSV для импорта ---
+        eda_desc = (
+            f"Букет от цветочной студии REN, Санкт-Петербург. "
+            f"Состав: {composition_text}. Аквабокс, открытка и кризал в комплекте."
+        )
+        eda_row = build_eda_row(
+            name=name, variation_label=var["label"], is_mono=is_mono,
+            price_eda=platform_prices["yandex_eda"],
+            positions=var.get("positions", []),
+            cover_url=cover_url, description=eda_desc
+        )
+        eda_ok = eda_csv.append_product(eda_row)
+        eda_status = "в CSV" if eda_ok else "ошибка записи CSV"
+
+        fw_results.append(f"  ↳ Маркет: {market_status} | Еда: {eda_status} (цена {platform_prices['yandex_eda']}₽)")
 
         sheet_payload = {
             "full_article": full_art,

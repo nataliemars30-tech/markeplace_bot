@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # МойСклад
     moysklad_token: str = Field(..., alias="MOYSKLAD_TOKEN")
 
+    # Яндекс Маркет
+    yandex_market_api_key: str = Field("", alias="YANDEX_MARKET_API_KEY")
+
     # Яндекс Диск
     yandex_disk_token: str = Field(..., alias="YANDEX_DISK_TOKEN")
 
