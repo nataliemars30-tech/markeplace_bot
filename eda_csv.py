@@ -69,6 +69,9 @@ def build_eda_row(*, name: str, variation_label: str, is_mono: bool,
         width, height, weight = SIZE_DIMS.get(variation_label.upper(), (35, 45, 900))
 
     consist_str = ",".join(f"{p['name']}:{int(p['qty'])}" for p in positions)
+    if not consist_str:
+        # Состав обязателен для сохранения карточки в ЛК Еды — не оставляем пустым
+        consist_str = f"{title}:1"
 
     return [
         cat_name, CAT_IDS[cat_name],          # 1-2: категория + id
