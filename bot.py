@@ -583,6 +583,29 @@ async def cancel_wizard(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("❌ Создание товара отменено.")
 
 
+# ------------------ Глобальная защита: ни одна ошибка не проходит молча ------------------
+@dp.error()
+async def global_error_handler(event: types.ErrorEvent):
+    logger.exception("Глобальная ошибка бота: %s", event.exception)
+    target = None
+    if event.update.message:
+        target = event.update.message
+    elif event.update.callback_query and event.update.callback_query.message:
+        target = event.update.callback_query.message
+    if target:
+        try:
+            await target.answer(
+                "❌ <b>Сбой сети или сервиса</b> — процесс прерван, карточка может быть неполной.\n"
+                "Подождите пару минут (у хостера бывают транзитные сбои DNS) и повторите создание товара.\n"
+                "Если ошибка повторяется — пришлите скрин, разберём.",
+                reply_markup=get_main_reply_keyboard(),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+    return True
+
+
 # ------------------ Точка входа ------------------
 async def main():
     logger.info("Инициализация локальной базы SQLite...")
