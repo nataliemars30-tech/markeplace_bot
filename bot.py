@@ -396,12 +396,19 @@ async def process_incoming_files(messages: List[types.Message], state: FSMContex
         )
         return
 
+    # Лимит Telegram Bot API: скачивание файлов > 20 МБ недоступно
+    video_note = ""
+    if video_doc and (video_doc.file_size or 0) > 20 * 1024 * 1024:
+        video_note = f"⚠️ Видео ({video_doc.file_size / 1048576:.0f} МБ) пропущено: лимит Telegram 20 МБ. Сожмите видео или загрузите на Диск вручную."
+        video_doc = None
+
     await state.set_state(ProductWizard.confirming_publish)
     await state.update_data(
         photo_file_ids=[d.file_id for d in photo_docs],
         photo_names=[d.file_name for d in photo_docs],
         video_file_id=video_doc.file_id if video_doc else None,
-        video_name=video_doc.file_name if video_doc else None
+        video_name=video_doc.file_name if video_doc else None,
+        video_note=video_note
     )
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -413,10 +420,12 @@ async def process_incoming_files(messages: List[types.Message], state: FSMContex
 
     req_name = fsm_data.get("name")
     req_cat = fsm_data.get("root_category")
+    video_note = fsm_data.get("video_note", "")
     await messages[0].reply(
         f"📸 Получено {len(photo_docs)} фото (1-е — обложка) + {'видео' if video_doc else 'без видео'}.\n\n"
         f"Товар: **{esc(req_name)}** ({esc(req_cat)})\n\n"
-        f"Опубликовать карточки на Flowwow, Яндекс Диске и в Google Таблице?",
+        f"Опубликовать карточки на Flowwow, Маркете, в CSV Еды, на Диске и в Google Таблице?"
+        + (f"\n\n{video_note}" if video_note else ""),
         reply_markup=kb,
         parse_mode="Markdown"
     )
@@ -490,13 +499,18 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             muted_v_path = temp_work_dir / "video_muted.mp4"
 
             v_file_obj = await bot.get_file(video_file_id)
+            if (v_file_obj.file_size or 0) > 20 * 1024 * 1024:
+                raise ValueError(f"Видео {v_file_obj.file_size / 1048576:.0f} МБ превышает лимит Telegram 20 МБ")
+
             await bot.download_file(v_file_obj.file_path, destination=raw_v_path)
 
             muted_ok = await mute_video_async(raw_v_path, muted_v_path)
             target_v = muted_v_path if muted_ok else raw_v_path
             video_public_url = await yd_client.upload_file(target_v, f"{disk_base_folder}/video_muted.mp4")
-        except YandexDiskError as e:
-            logger.warning(f"Видео не загружено (не критично): {e}")
+        except Exception as e:
+            # Видео — опция: любая ошибка (лимит 20 МБ, сеть, ffmpeg, Диск)
+            # не должна ронять публикацию карточки
+            logger.warning(f"Видео пропущено (не критично): {e}")
 
     flowwow_subcat = get_flowwow_subcategory(root_cat, is_mono)
     okpd2_info = get_okpd2_code(name)
@@ -610,12 +624,14 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
 
     fw_summary = "\n".join([f"• {esc(r)}" for r in fw_results])
     sheets_note = "" if sheets_ok else "\n⚠️ Запись в Google-таблицу не удалась (см. логи)"
+    video_note = data.get("video_note", "")
     report_text = (
         f"✅ **Товар зарегистрирован! Артикул: {base_article}**\n\n"
         f"📁 **Яндекс Диск:** `{disk_base_folder}`\n"
         f"📑 **Google Таблица:** Лист «{root_cat}» обновлен{sheets_note}\n\n"
         f"🛍 **Маркетплейсы:**\n{fw_summary}\n"
-        f"• **Яндекс Еда:** статус «в очереди» (ОКПД2: {okpd2_info['code']})"
+        f"• **Яндекс Еда:** строка в CSV (`/eda.csv`)\n"
+        + (f"\n{video_note}" if video_note else "")
     )
 
     await status_msg.edit_text(report_text, parse_mode="Markdown")
