@@ -27,7 +27,8 @@ from moysklad_api import MoySkladClient, MoySkladAuthError, MoySkladAPIError
 from flowwow_api import FlowwowClient, FlowwowAPIError
 from platform_rules import (
     ROOT_CATEGORIES, TILDA_BOUQUET_CATEGORIES,
-    get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices
+    get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices,
+    generate_flowwow_description
 )
 from sheets_api import GoogleSheetsManager
 from media_processor import mute_video_async
@@ -510,7 +511,8 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 photo_urls=uploaded_photo_urls,
                 consist=consist,
                 composition=composition_text,
-                production_time=60
+                description=generate_flowwow_description(name, var.get("positions", [])),
+                production_time=5
             )
             fw_id = res.get("id", "ok")
         except FlowwowAPIError as e:

@@ -35,7 +35,8 @@ class FlowwowClient:
         photo_urls: List[str],
         consist: Optional[List[Dict[str, Any]]] = None,
         composition: str = "",
-        production_time: int = 60,
+        description: str = "",
+        production_time: int = 5,
         width_cm: int = 30,
         height_cm: int = 40
     ) -> Dict[str, Any]:
@@ -63,7 +64,7 @@ class FlowwowClient:
             "name": name,
             "price": f"{int(price)}",
             "discount": "0",
-            "description": composition or name,
+            "description": description or composition or name,
             "images": photo_urls,
             "productionTime": {"val": production_time, "measure": 7},
             "minOrderCount": 1,
