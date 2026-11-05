@@ -91,3 +91,16 @@ class FlowwowClient:
 
             err_details = res_data.get("errors") or res_data.get("message") or resp.text[:300]
             raise FlowwowAPIError(f"Flowwow не создал товар: {err_details}")
+
+    async def hide_product(self, offer_id: str) -> Dict[str, Any]:
+        """Скрытие товара с витрины (кнопка «Скрыть букет со всех витрин»)."""
+        url = f"{self.BASE_URL}/products/hide?shopId={self.shop_id}"
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(url, headers=self._get_headers(), json={"offerId": offer_id})
+        try:
+            data = resp.json()
+        except Exception:
+            raise FlowwowAPIError(f"Flowwow вернул не-JSON [{resp.status_code}]: {resp.text[:200]}")
+        if resp.status_code == 200 and (data.get("updated") or data.get("isHidden")):
+            return {"success": True}
+        raise FlowwowAPIError(f"Flowwow: {data.get('message') or data}")
