@@ -276,3 +276,19 @@ class YandexMarketClient:
         if data.get("status") == "ERROR":
             raise YandexMarketError(f"Маркет ERROR: {json.dumps(data, ensure_ascii=False)[:400]}")
         return {"success": True, "offerId": offer_id}
+
+    async def delete_offer(self, offer_id: str) -> Dict[str, Any]:
+        """Удаление товара из DBS-кампании (команда /purge). Если ещё не проиндексирован —
+        Маркет вернёт notDeleted, повторить позже или удалить в кабинете."""
+        url = f"{self.BASE_URL}/campaigns/{self.CAMPAIGN_DBS}/offers/delete"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=self._headers(), json={"offerIds": [offer_id]})
+        try:
+            data = resp.json()
+        except Exception:
+            raise YandexMarketError(f"Маркет не-JSON [{resp.status_code}]: {resp.text[:200]}")
+        not_del = (data.get("result") or {}).get("notDeletedOfferIds") or []
+        if data.get("status") == "OK" and offer_id not in not_del:
+            return {"success": True}
+        raise YandexMarketError("товар ещё не проиндексирован — удаление невозможно сейчас, "
+                                "повторите позже или удалите в кабинете")

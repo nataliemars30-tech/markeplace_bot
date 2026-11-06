@@ -145,6 +145,48 @@ async def cmd_new(message: types.Message, state: FSMContext):
     await message.answer("Главное меню:", reply_markup=get_main_reply_keyboard())
 
 
+@dp.message(Command("purge"))
+async def cmd_purge(message: types.Message, state: FSMContext):
+    """Админ-команда очистки артикула везде: CSV Еды, Flowwow (архив), Маркет (удаление)."""
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2 or not re.fullmatch(r"REN(-[A-Z])?-\d{3}(-[A-Z0-9]+)?", parts[1].strip().upper()):
+        await message.reply("Формат: /purge REN-009 или /purge REN-009-M")
+        return
+    article = parts[1].strip().upper()
+    status = await message.answer(f"⏳ Очищаю {article}…")
+
+    results = []
+    # 1. CSV Еды: убрать строки с артикулом (по колонке «Название позиции», содержит артикул нельзя — ищем по совпадению в строке)
+    csv_path = config.db_path.parent / "eda_catalog.csv"
+    try:
+        if csv_path.exists():
+            lines = csv_path.read_text(encoding="utf-8-sig").splitlines()
+            header, rows = lines[0], lines[1:]
+            keep = [r for r in rows if article not in r]
+            removed = len(rows) - len(keep)
+            csv_path.write_text("\n".join([header] + keep), encoding="utf-8-sig")
+            results.append(f"CSV Еды: удалено строк {removed}")
+    except Exception as e:
+        results.append(f"CSV Еды: ошибка ({e})")
+
+    # 2. Flowwow: архив (архив — необратимый в «актив» только вручную, но товар сохраняется)
+    try:
+        await fw_client.archive_product(article)
+        results.append("Flowwow: в архиве")
+    except FlowwowAPIError as e:
+        results.append(f"Flowwow: {e}")
+
+    # 3. Маркет: удаление из кампании
+    try:
+        await market_client.delete_offer(article)
+        results.append("Маркет: запрошено удаление")
+    except YandexMarketError as e:
+        results.append(f"Маркет: {e}")
+
+    await status.edit_text(f"🧹 <b>{article}</b>\n" + "\n".join(f"• {esc(r)}" for r in results),
+                           parse_mode="HTML")
+
+
 # ------------------ Скрытие букета со всех витрин ------------------
 @dp.message(HideFSM.waiting_article, F.text)
 async def hide_by_article(message: types.Message, state: FSMContext):

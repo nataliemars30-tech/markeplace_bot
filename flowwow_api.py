@@ -119,3 +119,16 @@ class FlowwowClient:
         except Exception:
             pass
         return None
+
+    async def archive_product(self, offer_id: str) -> Dict[str, Any]:
+        """Перенос товара в архив (команда /purge)."""
+        url = f"{self.BASE_URL}/products/archive?shopId={self.shop_id}"
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(url, headers=self._get_headers(), json={"offerId": offer_id})
+        try:
+            data = resp.json()
+        except Exception:
+            raise FlowwowAPIError(f"Flowwow не-JSON [{resp.status_code}]: {resp.text[:200]}")
+        if resp.status_code == 200 and data.get("isArchived"):
+            return {"success": True}
+        raise FlowwowAPIError(data.get("message") or f"архивация не удалась: {data}")
