@@ -33,6 +33,7 @@ class TildaMCPClient:
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": self.PROTOCOL,
         }
         if self.session_id:
             headers["Mcp-Session-Id"] = self.session_id
