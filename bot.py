@@ -26,7 +26,7 @@ from moysklad_api import MoySkladClient, MoySkladAuthError, MoySkladAPIError
 from flowwow_api import FlowwowClient, FlowwowAPIError
 from platform_rules import (
     get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices,
-    generate_flowwow_description
+    generate_flowwow_description, count_stems, market_color_value_id, generate_market_seo_description
 )
 from sheets_api import GoogleSheetsManager
 from media_processor import mute_video_async
@@ -500,25 +500,36 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         )
 
         # --- Яндекс Маркет: полная карточка через business API ---
-        total_flowers = sum(int(p.get("qty", 1)) for p in var.get("positions", [])) or 1
+        pack_words = ("упаковк", "пленк", "плёнк", "тишью", "фоамиран", "корейк")
+        has_packaging = any(
+            any(w in str(p.get("name", "")).lower() for w in pack_words)
+            for p in var.get("positions", [])
+        )
+        stem_count = count_stems(var.get("positions", []))
+        color_vid = market_color_value_id(color)
+        packaging_label = "Пленка" if has_packaging else "Под ленту"
+        seo_desc = generate_market_seo_description(
+            name, composition_text, var_height, width_cm, packaging_label)
+        await asyncio.sleep(1)  # дать файлам гарантированно осесть на диск перед скачиванием Маркетом
         try:
             await market_client.create_card(
                 offer_id=full_art,
                 name=fw_name,
                 price=platform_prices["yandex_market"],
                 pictures=uploaded_photo_urls,
-                description=generate_flowwow_description(name, var.get("positions", []), style_word),
+                description=seo_desc,
                 composition=composition_text,
-                total_flowers=total_flowers,
+                total_flowers=stem_count,
                 height_cm=var_height,
                 size_label="" if is_mono else var["label"],
                 weight_kg=round((max(300, int(var['label']) * 90) if is_mono and str(var['label']).isdigit()
                                  else {"S": 600, "M": 900, "L": 1400}.get(str(var['label']).upper(), 900)) / 1000, 2),
-                width_cm=width_cm,
-                length_cm=30,
+                diameter_cm=width_cm,
                 height_pack_cm=max(var_height + 10, 40),
                 okpd2=okpd2_info.get("code", "01.19.21.190"),
-                tnved=okpd2_info.get("tnved", "0603197000")
+                tnved=okpd2_info.get("tnved", "0603197000"),
+                packaging_film=has_packaging,
+                color_value_id=color_vid
             )
             market_status = "карточка отправлена (обработка)"
         except YandexMarketError as e:
@@ -532,7 +543,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             name=name, variation_label=var["label"], is_mono=is_mono,
             price_eda=platform_prices["yandex_eda"],
             positions=var.get("positions", []),
-            cover_url=cover_url, description=eda_desc
+            picture_urls=uploaded_photo_urls, description=eda_desc
         )
         eda_ok = eda_csv.append_product(eda_row)
         eda_status = "в CSV" if eda_ok else "ошибка записи CSV"

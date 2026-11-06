@@ -56,7 +56,7 @@ SIZE_DIMS = {"S": (25, 35, 600), "M": (35, 45, 900), "L": (45, 55, 1400)}
 
 def build_eda_row(*, name: str, variation_label: str, is_mono: bool,
                   price_eda: int, positions: List[Dict[str, Any]],
-                  cover_url: str, description: str) -> List[str]:
+                  picture_urls: List[str], description: str) -> List[str]:
     """Одна строка CSV под формат импорта ЛК."""
     if is_mono:
         cat_name = "Монобукеты"
@@ -82,7 +82,7 @@ def build_eda_row(*, name: str, variation_label: str, is_mono: bool,
         description[:900],                     # 13: описание
         "REN", "Россия",                       # 14-15
         "", PLACES, "",                        # 16-18: штрихкоды, магазины, акциза
-        cover_url,                             # 19: фото
+        ",".join(picture_urls[:10]),           # 19: все фото через запятую
         "", "", "",                            # 20-22: Узбекистан
         "", "1",                               # 23-24: 18+, кол-во в упаковке
         str(width), str(height),               # 25-26: габариты
