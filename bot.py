@@ -570,11 +570,20 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             f"  ↳ Маркет: {market_status} | Еда: {eda_status} | Tilda: {tilda_status}"
         )
 
+        # --- Ссылка на карточку Flowwow для таблицы ---
+        fw_url = ""
+        if fw_id and fw_id != "—":
+            try:
+                fw_url = await fw_client.get_product_url(full_art) or ""
+            except Exception:
+                fw_url = ""
+
         sheet_payload = {
             "full_article": full_art,
             "name": name,
             "variation": var["label"],
             "flowwow_id": fw_id,
+            "flowwow_url": fw_url,
             "price": var["base_price"],
             "flowwow_price": platform_prices["flowwow"],
             "eda_price": platform_prices["yandex_eda"],

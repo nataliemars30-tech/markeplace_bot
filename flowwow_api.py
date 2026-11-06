@@ -104,3 +104,18 @@ class FlowwowClient:
         if resp.status_code == 200 and (data.get("updated") or data.get("isHidden")):
             return {"success": True}
         raise FlowwowAPIError(f"Flowwow: {data.get('message') or data}")
+
+    async def get_product_url(self, offer_id: str) -> Optional[str]:
+        """Получить публичную ссылку на карточку товара по offerId."""
+        url = f"{self.BASE_URL}/products"
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(url, headers=self._get_headers(),
+                                     json={"shopId": self.shop_id, "offerIds": [offer_id]})
+        try:
+            data = resp.json()
+            for item in data.get("items", []):
+                if item.get("offerId") == offer_id and item.get("url"):
+                    return item["url"]
+        except Exception:
+            pass
+        return None
