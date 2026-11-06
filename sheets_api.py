@@ -96,6 +96,8 @@ class GoogleSheetsManager:
             current_header = worksheet.row_values(1)
             if current_header and current_header != headers:
                 logger.warning(f"Лист {sheet_name}: заголовок устарел — обновляю ({len(current_header)} -> {len(headers)} колонок)")
+                if len(headers) > worksheet.col_count:
+                    worksheet.resize(rows=max(worksheet.row_count, 1000), cols=len(headers))
                 for i, h in enumerate(headers, 1):
                     worksheet.update_cell(1, i, h)
 

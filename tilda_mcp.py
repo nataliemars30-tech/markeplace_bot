@@ -44,6 +44,8 @@ class TildaMCPClient:
         if sid:
             self.session_id = sid
         ctype = resp.headers.get("content-type", "")
+        if not resp.content:
+            return {}  # 202 Accepted с пустым телом (notifications/initialized)
         if "event-stream" in ctype:
             data_line = ""
             for line in resp.text.splitlines():

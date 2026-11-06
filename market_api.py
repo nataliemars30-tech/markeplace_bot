@@ -69,6 +69,14 @@ FLOWER_KIND_MAP = [
 ]
 
 
+def _dotted_okpd2(code: str) -> str:
+    """'011921190' -> '01.19.21.190' (требование Маркета: точки обязательны)."""
+    c = str(code or "").replace(".", "").strip()
+    if len(c) == 9:
+        return f"{c[0:2]}.{c[2:4]}.{c[4:6]}.{c[6:9]}"
+    return str(code or "")
+
+
 class YandexMarketClient:
     BASE_URL = "https://api.partner.market.yandex.ru/v2"
     BUSINESS_ID = 216468683
@@ -178,13 +186,14 @@ class YandexMarketClient:
             "pictures": pictures[:30],
             "vendor": "REN",
             "description": description[:6000],
-            "basicPrice": {"value": float(price), "currencyId": "RUR"},
+            "basicPrice": {"value": int(round(float(price))), "currencyId": "RUR"},
             "weightDimensions": {"length": diameter_cm, "width": diameter_cm,
                                  "height": height_pack_cm, "weight": weight_kg},
             "boxCount": 1,
             "shelfLife": {"timePeriod": 7, "timeUnit": "DAY"},
             "commodityCodes": [
-                {"type": "OKPD2_CODE", "code": okpd2},
+                # Маркет принимает ОКПД2 только с точками: 01.19.21.190 (9 цифр без точек — отказ)
+                {"type": "OKPD2_CODE", "code": _dotted_okpd2(okpd2)},
                 {"type": "CUSTOMS_COMMODITY_CODE", "code": tnved}
             ],
             "manufacturerCountries": ["Россия"],
