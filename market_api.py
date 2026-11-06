@@ -208,16 +208,16 @@ class YandexMarketClient:
             raise YandexMarketError(f"Маркет вернул не-JSON [{resp.status_code}]: {resp.text[:250]}")
 
         if resp.status_code != 200:
-            raise YandexMarketError(f"Маркет [{resp.status_code}]: {json.dumps(data, ensure_ascii=False)[:300]}")
+            raise YandexMarketError(f"Маркет [{resp.status_code}]: {json.dumps(data, ensure_ascii=False)[:400]}")
         results = (data.get("result") or {}).get("results") or []
         for r in results:
             if r.get("offerId") == offer_id:
                 errors = r.get("errors") or []
                 if errors:
-                    raise YandexMarketError(f"Карточка отклонена: {errors[:2]}")
+                    raise YandexMarketError(f"Карточка отклонена: {json.dumps(errors, ensure_ascii=False)[:400]}")
                 warnings = r.get("warnings") or []
                 if warnings:
                     logger.info(f"Маркет warnings для {offer_id}: {warnings[:2]}")
         if data.get("status") == "ERROR":
-            raise YandexMarketError(str(data.get("errors"))[:300])
+            raise YandexMarketError(f"Маркет ERROR: {json.dumps(data, ensure_ascii=False)[:400]}")
         return {"success": True, "offerId": offer_id}

@@ -22,7 +22,7 @@ class TildaMCPError(Exception):
 
 class TildaMCPClient:
     URL = "https://tilda.ru/api/mcp/"
-    PROTOCOL = "2025-03-26"
+    PROTOCOL = "2026-07-28"  # поддерживаемые сервером версии; 2025-03-26 отклоняется с 400
 
     def __init__(self, token: Optional[str] = None):
         self.token = token or getattr(config, "tilda_mcp_token", "")

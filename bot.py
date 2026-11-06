@@ -27,7 +27,7 @@ from flowwow_api import FlowwowClient, FlowwowAPIError
 from platform_rules import (
     get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices,
     generate_flowwow_description, count_stems, market_color_value_id, market_filter_color_id,
-    generate_market_seo_description
+    generate_market_seo_description, display_positions, generate_flowwow_title
 )
 from sheets_api import GoogleSheetsManager
 from media_processor import mute_video_async
@@ -457,14 +457,17 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
     fw_results = []
     for var in variations:
         full_art = f"{base_article}-{clean_label(var['label'])}"
-        fw_name = f"{name} {var['label']}"
+        # Чистый состав для покупателя: без упаковки/лент, с человекочитаемыми названиями
+        dpos = display_positions(var.get("positions", []))
+        # Название с перечнем цветов для поиска и SEO (по регламенту Flowwow)
+        fw_name = generate_flowwow_title(name, is_mono, dpos, var["label"])
         platform_prices = calculate_platform_prices(var["base_price"])
 
         consist = [
             {"name": p["name"], "quantity": int(p["qty"]), "measure": 1}
-            for p in var.get("positions", [])
+            for p in dpos
         ] or [{"name": name, "quantity": 1, "measure": 1}]
-        composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in var.get("positions", [])) or name
+        composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos) or name
 
         dims = var.get("dims") or ""
         m_dims = re.match(r"(\d+)\s*[*x×]\s*(\d+)", dims)
@@ -487,7 +490,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 photo_urls=uploaded_photo_urls,
                 consist=consist,
                 composition=composition_text,
-                description=generate_flowwow_description(name, var.get("positions", []), style_word),
+                description=generate_flowwow_description(name, dpos, style_word),
                 production_time=5,
                 width_cm=width_cm,
                 height_cm=var_height
@@ -509,7 +512,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         stem_count = count_stems(var.get("positions", []))
         color_vid = market_color_value_id(color)
         filter_color_vid = market_filter_color_id(color)
-        flower_names = [p.get("name", "") for p in var.get("positions", [])]
+        flower_names = [p.get("name", "") for p in dpos]
         packaging_label = "Пленка" if has_packaging else "Под ленту"
         seo_desc = generate_market_seo_description(
             name, composition_text, var_height, width_cm, packaging_label)
@@ -549,7 +552,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         eda_row = build_eda_row(
             name=name, variation_label=var["label"], is_mono=is_mono,
             price_eda=platform_prices["yandex_eda"],
-            positions=var.get("positions", []),
+            positions=dpos,
             picture_urls=uploaded_photo_urls, description=eda_desc
         )
         eda_ok = eda_csv.append_product(eda_row)
