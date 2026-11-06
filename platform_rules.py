@@ -231,3 +231,19 @@ def generate_market_seo_description(name: str, composition_str: str,
         f"используйте прохладную воду с кризалом, держите букет вдали от прямых солнечных лучей "
         f"и отопительных приборов."
     )
+
+
+FILTER_COLOR_IDS = {
+    "белый": 13887686, "кремовый": 13887677, "розовый": 13891903,
+    "красный": 13891866, "сиреневый": 13898990, "жёлтый": 13891805,
+    "зеленый": 13891809, "зелёный": 13891809, "темный": 13899071,
+    "разноцветный": 15727440
+}
+
+
+def market_filter_color_id(color_label: str):
+    c = (color_label or "").lower()
+    for name, vid in FILTER_COLOR_IDS.items():
+        if name in c:
+            return vid
+    return None

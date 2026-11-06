@@ -26,7 +26,8 @@ from moysklad_api import MoySkladClient, MoySkladAuthError, MoySkladAPIError
 from flowwow_api import FlowwowClient, FlowwowAPIError
 from platform_rules import (
     get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices,
-    generate_flowwow_description, count_stems, market_color_value_id, generate_market_seo_description
+    generate_flowwow_description, count_stems, market_color_value_id, market_filter_color_id,
+    generate_market_seo_description
 )
 from sheets_api import GoogleSheetsManager
 from media_processor import mute_video_async
@@ -507,6 +508,8 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         )
         stem_count = count_stems(var.get("positions", []))
         color_vid = market_color_value_id(color)
+        filter_color_vid = market_filter_color_id(color)
+        flower_names = [p.get("name", "") for p in var.get("positions", [])]
         packaging_label = "Пленка" if has_packaging else "Под ленту"
         seo_desc = generate_market_seo_description(
             name, composition_text, var_height, width_cm, packaging_label)
@@ -529,7 +532,11 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 okpd2=okpd2_info.get("code", "01.19.21.190"),
                 tnved=okpd2_info.get("tnved", "0603197000"),
                 packaging_film=has_packaging,
-                color_value_id=color_vid
+                color_value_id=color_vid,
+                bouquet_type="mono" if is_mono else "author",
+                flower_names=flower_names,
+                filter_color_id=filter_color_vid,
+                video_url=video_public_url
             )
             market_status = "карточка отправлена (обработка)"
         except YandexMarketError as e:

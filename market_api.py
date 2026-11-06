@@ -27,6 +27,8 @@ PARAMS = {
     "Состав": 84321304,
     "Количество цветов": 14805873,
     "Цвет товара для карточки": 14871214,
+    "Цвет товара для фильтра": 13887626,
+    "Тип": 21194330,
     "Вид цветов": 43672710,
     "Оформление": 37920070,
     "Кому": 27078630,
@@ -40,11 +42,31 @@ PARAMS = {
 SIZE_VALUE_IDS = {"S": 32835890, "M": 32835539, "L": 32835431,
                   "XL": 32835748, "XS": 32835944}
 OFORM_ACQUABOX = 44624283  # «аквабокс» — всегда в комплекте у REN
+BUQUET_TYPE_IDS = {"mono": 34064842, "author": 34070791}  # монобукет / сборный букет
 
-# Вид цветов: популярные значения справочника (дополним по мере нужды)
-FLOWER_VALUE_IDS = {
-    "роза": 44406335,
+# Цвет товара для фильтра (13887626)
+FILTER_COLOR_IDS = {
+    "белый": 13887686, "кремовый": 13887677, "розовый": 13891903,
+    "красный": 13891866, "сиреневый": 13898990, "жёлтый": 13891805,
+    "зеленый": 13891809, "зелёный": 13891809, "темный": 13899071,
+    "разноцветный": 15727440
 }
+
+# Вид цветов (43672710, multivalue): фраза из названия позиции -> (valueId, канон)
+FLOWER_KIND_MAP = [
+    ("роза пионовидная", 44406358), ("роза кустовая", 44406375), ("роза", 44406335),
+    ("гвоздика", 44406343), ("хризантема", 44406402), ("тюльпан", 44406361),
+    ("пион", 44406333), ("гортензия", 44406404), ("альстромерия", 44406363),
+    ("гербера", 44406357), ("гипсофила", 44406384), ("маттиол", 44406342),
+    ("дельфиниум", 44406330), ("анемона", 44406328), ("ранункул", 44406341),
+    ("лютик", 44406341), ("калла", 44406397), ("ирис", 44406322),
+    ("фрезия", 44406414), ("лилия", 44406430), ("подсолнух", 44406431),
+    ("георгин", 44406381), ("амариллис", 44406399), ("астра", 44406317),
+    ("нарцисс", 44406413), ("орхидея", 44406318), ("протея", 44406417),
+    ("статица", 44406339), ("нутан", 44406385), ("гладиолус", 44406327),
+    ("сирень", 44406394), ("мимоза", 44406348), ("лаванда", 44406412),
+    ("василек", 44406429), ("антуриум", None), ("эустома", None)  # нет в справочнике Маркета
+]
 
 
 class YandexMarketClient:
@@ -80,7 +102,11 @@ class YandexMarketClient:
         okpd2: str = "01.19.21.190",
         tnved: str = "0603197000",
         packaging_film: bool = False,
-        color_value_id: Optional[int] = None
+        color_value_id: Optional[int] = None,
+        bouquet_type: str = "author",
+        flower_names: Optional[List[str]] = None,
+        filter_color_id: Optional[int] = None,
+        video_url: Optional[str] = None
     ) -> Dict[str, Any]:
         """Полноценная карточка товара в каталоге кабинета. Только НОВЫЕ offerId.
 
@@ -127,6 +153,23 @@ class YandexMarketClient:
         if color_value_id:
             parameter_values.append(
                 {"parameterId": PARAMS["Цвет товара для карточки"], "valueId": color_value_id})
+        if filter_color_id:
+            parameter_values.append(
+                {"parameterId": PARAMS["Цвет товара для фильтра"], "valueId": filter_color_id})
+        # Тип: монобукет или сборный букет
+        type_id = BUQUET_TYPE_IDS.get(bouquet_type, BUQUET_TYPE_IDS["author"])
+        parameter_values.append(
+            {"parameterId": PARAMS["Тип"], "valueId": type_id})
+        # Вид цветов (multivalue) — по названиям позиций состава
+        added_kinds = set()
+        for pname in flower_names or []:
+            low = str(pname).lower()
+            for phrase, vid in FLOWER_KIND_MAP:
+                if vid and phrase in low and vid not in added_kinds:
+                    parameter_values.append(
+                        {"parameterId": PARAMS["Вид цветов"], "valueId": vid})
+                    added_kinds.add(vid)
+                    break
 
         offer = {
             "offerId": offer_id,
@@ -140,8 +183,6 @@ class YandexMarketClient:
                                  "height": height_pack_cm, "weight": weight_kg},
             "boxCount": 1,
             "shelfLife": {"timePeriod": 7, "timeUnit": "DAY"},
-            "lifeTime": {"timePeriod": 7, "timeUnit": "DAY"},
-            "guaranteePeriod": {"timePeriod": 1, "timeUnit": "DAY"},
             "commodityCodes": [
                 {"type": "OKPD2_CODE", "code": okpd2},
                 {"type": "CUSTOMS_COMMODITY_CODE", "code": tnved}
@@ -150,6 +191,8 @@ class YandexMarketClient:
             "vendorCode": offer_id,
             "parameterValues": parameter_values
         }
+        if video_url:
+            offer["videos"] = [video_url]
 
         url = f"{self.BASE_URL}/businesses/{self.BUSINESS_ID}/offer-mappings/update"
         async with httpx.AsyncClient(timeout=30.0) as client:
