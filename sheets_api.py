@@ -13,16 +13,20 @@ logger = logging.getLogger(__name__)
 
 HEADERS_MAP = {
     "Букеты": [
-        "Артикул", "Название", "Размер/Штук", "Flowwow ID", "Цена", "Себестоимость",
-        "Маржа %", "Заказ МойСклад", "Категория Tilda", "ОКПД2 Код", "ОКПД2 Название",
-        "Подтверждение соответствия", "Госрегистрация", "Яндекс Статус", "Обложка (URL)",
-        "Папка Яндекс Диск", "Дата создания", "Создатель (TG ID)"
+        "Артикул", "Название", "Размер/Штук", "Flowwow ID", "Базовая цена",
+        "Цена Flowwow", "Цена Еда (+30%)", "Цена Маркет (+50%)", "Цена Tilda/Карты (+10%)",
+        "Себестоимость", "Маржа %", "Заказ МойСклад",
+        "Категория Tilda", "ОКПД2 Код", "ОКПД2 Название", "ТН ВЭД",
+        "Состав букета", "Ширина", "Высота",
+        "Статус Flowwow", "Статус Маркет", "Статус Еда", "Статус Tilda",
+        "Обложка (URL)", "Все фото (JSON)", "Папка Яндекс Диск",
+        "Дата создания", "Создатель (TG ID)"
     ],
     "Свадебные": [
-        "Артикул", "Название", "Размер", "Flowwow ID", "Цена", "Себестоимость",
-        "Маржа %", "Заказ МойСклад", "Свадебная категория", "ОКПД2 Код",
-        "Подтверждение соответствия", "Госрегистрация", "Яндекс Статус", "Обложка (URL)",
-        "Папка Яндекс Диск", "Дата создания", "Создатель (TG ID)"
+        "Артикул", "Название", "Размер", "Flowwow ID", "Цена",
+        "Себестоимость", "Маржа %", "Заказ МойСклад", "Категории Tilda",
+        "ОКПД2 Код", "Состав букета", "Обложка (URL)", "Папка Яндекс Диск",
+        "Дата создания", "Создатель (TG ID)"
     ],
     "Композиции": [
         "Артикул", "Название", "Тип (Коробка/Корзина)", "Flowwow ID", "Цена", "Себестоимость",
@@ -84,6 +88,13 @@ class GoogleSheetsManager:
                 worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=len(headers))
                 worksheet.append_row(headers)
 
+            # Починка заголовка, если лист создан старой версией бота
+            current_header = worksheet.row_values(1)
+            if current_header and current_header != headers:
+                logger.warning(f"Лист {sheet_name}: заголовок устарел — обновляю ({len(current_header)} -> {len(headers)} колонок)")
+                for i, h in enumerate(headers, 1):
+                    worksheet.update_cell(1, i, h)
+
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             if sheet_name in ("Букеты", "Свадебные"):
@@ -93,16 +104,26 @@ class GoogleSheetsManager:
                     item_data.get("variation", ""),
                     str(item_data.get("flowwow_id", "")),
                     item_data.get("price", 0),
+                    item_data.get("flowwow_price", ""),
+                    item_data.get("eda_price", ""),
+                    item_data.get("market_price", ""),
+                    item_data.get("tilda_price", ""),
                     item_data.get("cost_price", 0),
                     f"{item_data.get('margin_percent', 0)}%",
                     str(item_data.get("moysklad_order_no", "")),
                     item_data.get("tilda_category", ""),
                     item_data.get("okpd2_code", ""),
                     item_data.get("okpd2_name", ""),
-                    "Нет",
-                    "Нет",
-                    item_data.get("yandex_status", "в очереди"),
+                    item_data.get("tnved", ""),
+                    item_data.get("consist", ""),
+                    item_data.get("width", ""),
+                    item_data.get("height", ""),
+                    item_data.get("status_flowwow", ""),
+                    item_data.get("status_market", ""),
+                    item_data.get("status_eda", ""),
+                    item_data.get("status_tilda", ""),
                     item_data.get("cover_url", ""),
+                    item_data.get("all_photos", ""),
                     item_data.get("disk_folder_url", ""),
                     now_str,
                     str(item_data.get("created_by_tg_id", ""))
