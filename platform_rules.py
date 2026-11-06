@@ -41,11 +41,11 @@ def calculate_platform_prices(base_price: float) -> Dict[str, int]:
     price_tilda = int(round(base * 1.10))
     return {
         "base": int(round(base)),
-        "tilda": price_tilda,
-        "flowwow": int(round((base + 150.0) * 1.50)),
-        "yandex_eda": int(round(base * 1.30)),
-        "yandex_market": int(round(base * 1.50)),
-        "yandex_maps": price_tilda
+        "tilda": int(round(price_tilda / 10) * 10),
+        "flowwow": int(round((base + 150.0) * 1.50 / 10) * 10),
+        "yandex_eda": int(round(base * 1.30 / 10) * 10),
+        "yandex_market": int(round(base * 1.50 / 10) * 10),
+        "yandex_maps": int(round(price_tilda / 10) * 10)
     }
 
 

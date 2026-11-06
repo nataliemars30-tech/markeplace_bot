@@ -110,13 +110,24 @@ class TildaCatalog:
         tilda_categories: list,
         description: str,
         full_article: str,
+        photo_alts: Optional[list] = None,
+        seo_title: str = "",
+        seo_descr: str = "",
+        seo_keywords: str = ""
     ) -> str:
         if not self._available:
             return "нет токена (TILDA_MCP_TOKEN)"
         partuids = ",".join(
             TILDA_PARTUIDS[c] for c in (tilda_categories or []) if c in TILDA_PARTUIDS
         )
-        gallery = json.dumps([{"img": u} for u in photo_urls], ensure_ascii=False)
+        # gallery: у каждого фото SEO alt-текст
+        gallery_items = []
+        for i, u in enumerate(photo_urls):
+            item = {"img": u}
+            if photo_alts and i < len(photo_alts) and photo_alts[i]:
+                item["alt"] = photo_alts[i]
+            gallery_items.append(item)
+        gallery = json.dumps(gallery_items, ensure_ascii=False)
         try:
             # 1. создать товар (получить uid)
             created = await self.client.call_tool("store_create_products", {
@@ -137,7 +148,10 @@ class TildaCatalog:
                 "gallery": gallery,
                 "descr": description[:1000],
                 "sku": full_article,
-                "externalid": full_article
+                "externalid": full_article,
+                "seo_title": seo_title[:200],
+                "seo_descr": seo_descr[:400],
+                "seo_keywords": seo_keywords[:500]
             })
             return f"создан (uid {product_uid})"
         except Exception as e:

@@ -27,7 +27,8 @@ from flowwow_api import FlowwowClient, FlowwowAPIError
 from platform_rules import (
     get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices,
     generate_flowwow_description, count_stems, market_color_value_id, market_filter_color_id,
-    generate_market_seo_description, display_positions, generate_flowwow_title
+    generate_market_seo_description, display_positions, generate_flowwow_title,
+    generate_tilda_seo_and_text
 )
 from sheets_api import GoogleSheetsManager
 from media_processor import mute_video_async
@@ -559,6 +560,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         eda_status = "в CSV" if eda_ok else "ошибка записи CSV"
 
         # --- Tilda: прямое создание через MCP ---
+        tilda_seo = generate_tilda_seo_and_text(name, dpos)
         tilda_status = await tilda_catalog.create_product(
             project_id=config.tilda_project_id,
             title=f"{name} {var['label']}",
@@ -566,7 +568,11 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             photo_urls=uploaded_photo_urls,
             tilda_categories=tilda_cats,
             description=eda_desc,
-            full_article=full_art
+            full_article=full_art,
+            photo_alts=[tilda_seo.get(f"alt_{i}", "") for i in range(1, 7)],
+            seo_title=tilda_seo.get("title", ""),
+            seo_descr=tilda_seo.get("description", ""),
+            seo_keywords=tilda_seo.get("keywords", "")
         )
 
         fw_results.append(
