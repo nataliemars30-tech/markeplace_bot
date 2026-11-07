@@ -103,6 +103,14 @@ TILDA_PARTUIDS = {
     "Осенние": "554935962393",
 }
 
+# Постоянные доп. товары для букетов (опции каталога Tilda)
+TILDA_OPTIONS_TITLE = "Дополнительно"
+TILDA_OPTIONS = [
+    {"value": "Открытка фирменная", "price": "150"},
+    {"value": "Транспортировочный набор (коробка и аквабокс)", "price": "490"},
+    {"value": "Секатор", "price": "900"},
+]
+
 
 class TildaCatalog:
     """Создание товаров в каталоге Tilda из данных бота."""
@@ -125,16 +133,20 @@ class TildaCatalog:
         photo_alts: Optional[list] = None,
         seo_title: str = "",
         seo_descr: str = "",
-        seo_keywords: str = ""
+        seo_keywords: str = "",
+        height_cm: int = 45,
+        weight_g: int = 900
     ) -> str:
         if not self._available:
             return "нет токена (TILDA_MCP_TOKEN)"
         partuids = ",".join(
             TILDA_PARTUIDS[c] for c in (tilda_categories or []) if c in TILDA_PARTUIDS
         )
+        # Фото: загружаем на CDN Tilda (внешние ссылки в gallery часто не подгружаются)
+        cdn_urls = await self._upload_photos(project_id, photo_urls)
         # gallery: у каждого фото SEO alt-текст
         gallery_items = []
-        for i, u in enumerate(photo_urls):
+        for i, u in enumerate(cdn_urls):
             item = {"img": u}
             if photo_alts and i < len(photo_alts) and photo_alts[i]:
                 item["alt"] = photo_alts[i]
@@ -163,7 +175,13 @@ class TildaCatalog:
                 "externalid": full_article,
                 "seo_title": seo_title[:200],
                 "seo_descr": seo_descr[:400],
-                "seo_keywords": seo_keywords[:500]
+                "seo_keywords": seo_keywords[:500],
+                # размеры букета (мм) и вес (г)
+                "pack_x": "250", "pack_y": "250", "pack_z": str(int(height_cm) * 10),
+                "pack_m": str(int(weight_g)),
+                # постоянные доп. товары-опции
+                "prod_option": TILDA_OPTIONS_TITLE,
+                "prod_variants": json.dumps(TILDA_OPTIONS, ensure_ascii=False),
             })
             self.last_report = self._verify_product(project_id, product_uid, {
                 "title": title, "price": str(price_tilda), "partuids": partuids,
@@ -175,6 +193,24 @@ class TildaCatalog:
         except Exception as e:
             logger.warning(f"Tilda MCP ошибка: {e}")
             return f"ошибка ({e})"
+
+    async def _upload_photos(self, project_id: int, photo_urls: list) -> list:
+        """Загрузка фото на CDN Tilda через инструмент upload_image.
+        Возвращает CDN-URL'ы; при сбое — исходные URL (фолбэк)."""
+        import re as _re
+        cdn = []
+        for u in photo_urls or []:
+            try:
+                res = await self.client.call_tool("upload_image", {
+                    "projectid": project_id,
+                    "images": [{"image_url": u}],
+                })
+                m = _re.search(r"https://[^\s\"']*tildacdn[^\s\"']+", res or "")
+                cdn.append(m.group(0) if m else u)
+            except Exception as e:
+                logger.warning(f"Tilda upload_image сбой для {u}: {e} — оставляю исходный URL")
+                cdn.append(u)
+        return cdn
 
     def _verify_product(self, project_id: int, product_uid: str, expected: Dict[str, Any]) -> str:
         """Авто-проверка опубликованного товара: бот сам сверяет, что Tilda

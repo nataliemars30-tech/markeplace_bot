@@ -28,10 +28,11 @@ from platform_rules import (
     get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices,
     generate_flowwow_description, count_stems, market_color_value_id, market_filter_color_id,
     generate_market_seo_description, display_positions, generate_flowwow_title,
-    generate_tilda_seo_and_text
+    generate_tilda_seo_and_text, build_marketplace_title
 )
+from seo_generator import generate_description
 from sheets_api import GoogleSheetsManager
-from media_processor import mute_video_async
+from media_processor import mute_video_async, compress_video_async
 from market_api import YandexMarketClient, YandexMarketError
 from eda_csv import EdaCsvManager, build_eda_row
 from tilda_mcp import TildaCatalog
@@ -589,16 +590,22 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
     if video_file_id and video_name:
         try:
             raw_v_path = temp_work_dir / "raw_video.mp4"
-            muted_v_path = temp_work_dir / "video_muted.mp4"
+            ready_v_path = temp_work_dir / "video_ready.mp4"
             v_file_obj = await bot.get_file(video_file_id)
             if (v_file_obj.file_size or 0) > 20 * 1024 * 1024:
-                raise ValueError(f"Видео {v_file_obj.file_size / 1048576:.0f} МБ превышает лимит Telegram 20 МБ")
+                raise ValueError(
+                    f"видео {v_file_obj.file_size / 1048576:.0f} МБ — Telegram не даёт боту скачать "
+                    f"файлы больше 20 МБ. Сожмите видео (например, через «Экспорт» в мессенджере "
+                    f"или любой компрессор до 720p) и отправьте заново."
+                )
             await bot.download_file(v_file_obj.file_path, destination=raw_v_path)
-            muted_ok = await mute_video_async(raw_v_path, muted_v_path)
-            target_v = muted_v_path if muted_ok else raw_v_path
+            # Сжатие: H.264 до 1080p/CRF28 без звука — обычно в 3-10 раз легче оригинала
+            compressed = await compress_video_async(raw_v_path, ready_v_path)
+            target_v = ready_v_path if compressed else raw_v_path
             video_public_url = await yd_client.upload_file(target_v, f"{disk_base_folder}/video_muted.mp4")
         except Exception as e:
             logger.warning(f"Видео пропущено (не критично): {e}")
+            video_note = (video_note + " " if video_note else "") + f"⚠️ Видео не загружено: {e}"
 
     flowwow_subcat = get_flowwow_subcategory(root_cat, is_mono)
     okpd2_info = get_okpd2_code(name)
@@ -609,8 +616,12 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         full_art = f"{base_article}-{clean_label(var['label'])}"
         # Чистый состав для покупателя: без упаковки/лент, с человекочитаемыми названиями
         dpos = display_positions(var.get("positions", []))
-        # Название с перечнем цветов для поиска и SEO (по регламенту Flowwow)
-        fw_name = generate_flowwow_title(name, is_mono, dpos, var["label"])
+        # Название по ТЗ 07.11: авторские — формула «Букет [настроение] «Имя» с цветами» (≤100);
+        # моно — прежний формат «N название»
+        if is_mono:
+            fw_name = generate_flowwow_title(name, is_mono, dpos, var["label"])
+        else:
+            fw_name = build_marketplace_title(name, color, dpos)
         platform_prices = calculate_platform_prices(var["base_price"])
 
         consist = [
@@ -622,13 +633,20 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         dims = var.get("dims") or ""
         m_dims = re.match(r"(\d+)\s*[*x×]\s*(\d+)", dims)
         if m_dims:
-            width_cm, var_height = int(m_dims.group(2)), int(m_dims.group(1))
+            var_height = int(m_dims.group(1))  # высота = стебли (первое число)
         elif is_mono:
-            var_height, width_cm = (height_cm or 50), 30
+            var_height = height_cm or 50
         else:
-            width_cm, var_height = {"S": (25, 35), "M": (35, 45), "L": (45, 55)}.get(
-                clean_label(var["label"]), (35, 45))
+            var_height = {"S": 35, "M": 45, "L": 55}.get(clean_label(var["label"]), 45)
+        width_cm = 25  # ширина букета по регламенту владельца
 
+        # Упаковка из состава (нужна и Flowwow, и Маркету)
+        pack_words = ("упаковк", "пленк", "плёнк", "тишью", "фоамиран", "корейк")
+        has_packaging = any(
+            any(w in str(p.get("name", "")).lower() for w in pack_words)
+            for p in var.get("positions", [])
+        )
+        packaging_label = "Пленка" if has_packaging else "Под ленту"
         fw_status = "создан"
         fw_id = "—"
         try:
@@ -640,7 +658,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 photo_urls=uploaded_photo_urls,
                 consist=consist,
                 composition=composition_text,
-                description=generate_flowwow_description(name, dpos, style_word),
+                description=await generate_description(name, color, composition_text, packaging_label, "flowwow"),
                 production_time=5,
                 width_cm=width_cm,
                 height_cm=var_height
@@ -654,18 +672,13 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         )
 
         # --- Яндекс Маркет: полная карточка через business API ---
-        pack_words = ("упаковк", "пленк", "плёнк", "тишью", "фоамиран", "корейк")
-        has_packaging = any(
-            any(w in str(p.get("name", "")).lower() for w in pack_words)
-            for p in var.get("positions", [])
-        )
         stem_count = count_stems(var.get("positions", []))
         color_vid = market_color_value_id(color)
         filter_color_vid = market_filter_color_id(color)
         flower_names = [p.get("name", "") for p in dpos]
-        packaging_label = "Пленка" if has_packaging else "Под ленту"
-        seo_desc = generate_market_seo_description(
-            name, composition_text, var_height, width_cm, packaging_label)
+        weight_g = (max(300, int(var['label']) * 90) if is_mono and str(var['label']).isdigit()
+                    else {"S": 600, "M": 900, "L": 1400}.get(str(var['label']).upper(), 900))
+        seo_desc = await generate_description(name, color, composition_text, packaging_label, "market")
         await asyncio.sleep(1)  # дать файлам гарантированно осесть на диск перед скачиванием Маркетом
         try:
             await market_client.create_card(
@@ -678,8 +691,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 total_flowers=stem_count,
                 height_cm=var_height,
                 size_label="" if is_mono else var["label"],
-                weight_kg=round((max(300, int(var['label']) * 90) if is_mono and str(var['label']).isdigit()
-                                 else {"S": 600, "M": 900, "L": 1400}.get(str(var['label']).upper(), 900)) / 1000, 2),
+                weight_kg=round(weight_g / 1000, 2),
                 diameter_cm=width_cm,
                 height_pack_cm=max(var_height + 10, 40),
                 okpd2=okpd2_info.get("code", "01.19.21.190"),
@@ -697,7 +709,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
 
         eda_desc = (
             f"Букет от цветочной студии REN, Санкт-Петербург. "
-            f"Состав: {composition_text}. Аквабокс, открытка и кризал в комплекте."
+            f"Состав: {composition_text}. Аквабокс и кризал в комплекте."
         )
         eda_row = build_eda_row(
             name=name, variation_label=var["label"], is_mono=is_mono,
@@ -721,7 +733,9 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             photo_alts=[tilda_seo.get(f"alt_{i}", "") for i in range(1, 7)],
             seo_title=tilda_seo.get("title", ""),
             seo_descr=tilda_seo.get("description", ""),
-            seo_keywords=tilda_seo.get("keywords", "")
+            seo_keywords=tilda_seo.get("keywords", ""),
+            height_cm=var_height,
+            weight_g=weight_g
         )
 
         fw_results.append(

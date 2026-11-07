@@ -22,7 +22,7 @@ class YandexMarketError(Exception):
     pass
 
 
-# Характеристики категории 91284 (id из POST /v2/category/91284/parameters)
+# Характеристики категории 91284 (полная схема из POST /v2/category/91284/parameters, 07.11.2026)
 PARAMS = {
     "Состав": 84321304,
     "Количество цветов": 14805873,
@@ -30,19 +30,42 @@ PARAMS = {
     "Цвет товара для фильтра": 13887626,
     "Тип": 21194330,
     "Вид цветов": 43672710,
+    "Зелень": 43674870,
     "Оформление": 37920070,
     "Кому": 27078630,
     "Повод": 27141030,
     "Высота букета": 14805336,
     "Сборка": 43867410,
+    "Тип свадебного букета": 43867490,
     "Размер": 32835410,
     "Единиц в одной упаковке": 14805583,
     "Количество упаковок в товаре": 33663230,
+    "Дополнительная информация": 7351754,
+    "Прочие характеристики": 57046341,
 }
 SIZE_VALUE_IDS = {"S": 32835890, "M": 32835539, "L": 32835431,
                   "XL": 32835748, "XS": 32835944}
 OFORM_ACQUABOX = 44624283  # «аквабокс» — всегда в комплекте у REN
 BUQUET_TYPE_IDS = {"mono": 34064842, "author": 34070791}  # монобукет / сборный букет
+BOUQUET_WIDTH_CM = 25  # ширина букета по регламенту владельца
+
+# Кому (27078630) — отмечаем ВСЕ значения справочника
+ALL_AUDIENCE = [
+    (27078890, "бабушке"), (44406927, "деловому партнеру"), (44406928, "женщине"),
+    (27079058, "коллеге"), (44406925, "любимой"), (27079070, "маме"),
+    (44406919, "мужчине"), (44406922, "ребенку"), (44406911, "учителю"),
+]
+
+# Зелень (43674870, multivalue)
+GREEN_KIND_MAP = [
+    ("эвкалипт", 44406474, "ветви эвкалипта"),
+    ("писташ", 44406488, "зелень фисташки"),
+    ("аспарагус", 44406536, "аспарагус"),
+    ("буплерум", 44406418, "буплерум"),
+    ("гиперикум", 44406457, "гиперикум"),
+    ("рускус", 44406520, "листья рускуса"),
+    ("салал", 44406518, "листья салала"),
+]
 
 # Цвет товара для фильтра (13887626)
 FILTER_COLOR_IDS = {
@@ -184,12 +207,17 @@ class YandexMarketClient:
             {"parameterId": PARAMS["Количество упаковок в товаре"], "value": "1"},
             {"parameterId": PARAMS["Оформление"], "valueId": 44624283, "value": "аквабокс"},
             {"parameterId": PARAMS["Сборка"], "valueId": 44625852, "value": "на стеблях"},
-            # Кому: женщине, любимой, маме, коллеге
-            {"parameterId": PARAMS["Кому"], "valueId": 44406928, "value": "женщине"},
-            {"parameterId": PARAMS["Кому"], "valueId": 44406925, "value": "любимой"},
-            {"parameterId": PARAMS["Кому"], "valueId": 27079070, "value": "маме"},
-            {"parameterId": PARAMS["Кому"], "valueId": 27079058, "value": "коллеге"},
+            # Дополнительная информация и прочие характеристики — закрываем баллы заполненности
+            {"parameterId": PARAMS["Дополнительная информация"],
+             "value": "Букет собирается флористом в день доставки. Цветочная студия REN, Санкт-Петербург."},
+            {"parameterId": PARAMS["Прочие характеристики"],
+             "value": "Состав и оттенки могут незначительно варьироваться в зависимости от поставки — "
+                      "флорист сохраняет настроение и цветовую гамму букета."},
         ]
+        # Кому: отмечаем ВСЕ значения справочника (максимум баллов)
+        for vid, vname in ALL_AUDIENCE:
+            parameter_values.append(
+                {"parameterId": PARAMS["Кому"], "valueId": vid, "value": vname})
         # Повод: отмечаем ВСЕ значения справочника (требование владельца)
         for vid, vname in ALL_OCCASIONS:
             parameter_values.append(
@@ -229,6 +257,17 @@ class YandexMarketClient:
                     added_kinds.add(vid)
                     break
 
+        # Зелень (multivalue) — по названиям позиций состава
+        added_green = set()
+        for pname in flower_names or []:
+            low = str(pname).lower()
+            for phrase, vid, canonical in GREEN_KIND_MAP:
+                if vid and phrase in low and vid not in added_green:
+                    parameter_values.append(
+                        {"parameterId": PARAMS["Зелень"], "valueId": vid, "value": canonical})
+                    added_green.add(vid)
+                    break
+
         offer = {
             "offerId": offer_id,
             "name": name[:256],
@@ -237,9 +276,9 @@ class YandexMarketClient:
             "vendor": "REN",
             "description": description[:6000],
             "basicPrice": {"value": int(round(float(price))), "currencyId": "RUR"},
-            # Габариты по правилу владельца: длина = высота (стебли), ширина = диаметр
-            "weightDimensions": {"length": height_pack_cm, "width": diameter_cm,
-                                 "height": height_pack_cm, "weight": weight_kg},
+            # Габариты по регламенту владельца: ширина букета = 25 см, длина = высота = стебли
+            "weightDimensions": {"length": height_cm, "width": BOUQUET_WIDTH_CM,
+                                 "height": height_cm, "weight": weight_kg},
             "boxCount": 1,
             # ОКПД2 и срок годности НЕ передаём (решение владельца)
             "manufacturerCountries": ["Россия"],
