@@ -118,6 +118,9 @@ def get_pending_reviews() -> List[Dict[str, Any]]:
             FROM reviews WHERE answered_at IS NULL ORDER BY review_id DESC LIMIT 10;
         """)
         return [dict(row) for row in cursor.fetchall()]
+
+
+def get_next_article(root_category: str) -> str:
     """Генерация следующего сквозного артикула с префиксом в зависимости от категории."""
     prefix_map = {
         "Букеты": "REN",
