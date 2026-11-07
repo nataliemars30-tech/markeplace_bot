@@ -268,6 +268,8 @@ class YandexMarketClient:
                     added_green.add(vid)
                     break
 
+        from rules_sheet import get as rule_get
+        bouquet_width = int(rule_get("market", "bouquet_width_cm", "25") or 25)
         offer = {
             "offerId": offer_id,
             "name": name[:256],
@@ -276,8 +278,8 @@ class YandexMarketClient:
             "vendor": "REN",
             "description": description[:6000],
             "basicPrice": {"value": int(round(float(price))), "currencyId": "RUR"},
-            # Габариты по регламенту владельца: ширина букета = 25 см, длина = высота = стебли
-            "weightDimensions": {"length": height_cm, "width": BOUQUET_WIDTH_CM,
+            # Габариты по регламенту владельца: ширина букета из «Правил», длина = высота = стебли
+            "weightDimensions": {"length": height_cm, "width": bouquet_width,
                                  "height": height_cm, "weight": weight_kg},
             "boxCount": 1,
             # ОКПД2 и срок годности НЕ передаём (решение владельца)
