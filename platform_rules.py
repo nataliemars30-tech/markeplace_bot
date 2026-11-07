@@ -312,11 +312,14 @@ def _instrumental(flower_name: str) -> str:
             for j in range(i + 1, len(words)):
                 if low[j] in INFLECT_ADJ:
                     words[j] = INFLECT_ADJ[low[j]]
+                else:
+                    words[j] = words[j].title()  # сортовое имя: 'Франц Мондиаль'
             break
     else:
         words[-1] = words[-1].lower() + "ом"  # грубый фолбэк
-    out = " ".join(words).lower()
-    return out
+        return " ".join(words).lower()
+    # склонённое слово и всё до него — строчными, сортовое имя после — с большой буквы
+    return " ".join(words[:i]) .lower() + (" " if i > 0 else "") + " ".join(words[i:])
 
 
 def build_marketplace_title(bouquet_name: str, color_or_season: str,

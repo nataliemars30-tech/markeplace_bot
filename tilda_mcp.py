@@ -8,6 +8,7 @@
 import json
 import logging
 import uuid
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
@@ -196,14 +197,37 @@ class TildaCatalog:
 
     async def _upload_photos(self, project_id: int, photo_urls: list) -> list:
         """Загрузка фото на CDN Tilda через инструмент upload_image.
+
+        Сырьё с камер бывает до 8000+ px — Tilda CDN отказывает (>8000px).
+        Перед загрузкой ресайзим через ffmpeg до 2000px по большей стороне
+        (ffmpeg есть в контейнере — используется для видео).
         Возвращает CDN-URL'ы; при сбое — исходные URL (фолбэк)."""
+        import base64
         import re as _re
+        import subprocess
+        import tempfile
         cdn = []
         for u in photo_urls or []:
             try:
+                async with httpx.AsyncClient(timeout=120.0) as http:
+                    raw = await http.get(u)
+                    raw.raise_for_status()
+                with tempfile.TemporaryDirectory() as td:
+                    src = Path(td) / "src.img"
+                    dst = Path(td) / "dst.jpg"
+                    src.write_bytes(raw.content)
+                    resized = subprocess.run(
+                        ["ffmpeg", "-y", "-i", str(src),
+                         "-vf", "scale='min(2000,iw)':-2", str(dst)],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    payload = dst.read_bytes() if resized.returncode == 0 and dst.exists() else raw.content
                 res = await self.client.call_tool("upload_image", {
                     "projectid": project_id,
-                    "images": [{"image_url": u}],
+                    "images": [{
+                        "filename": "photo.jpg",
+                        "image_base64": base64.b64encode(payload).decode(),
+                        "mimetype": "image/jpeg",
+                    }],
                 })
                 m = _re.search(r"https://[^\s\"']*tildacdn[^\s\"']+", res or "")
                 cdn.append(m.group(0) if m else u)
