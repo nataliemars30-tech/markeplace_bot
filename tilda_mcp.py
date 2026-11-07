@@ -164,6 +164,13 @@ class TildaCatalog:
             m = _re.search(r"\b(\d{6,})\b", created)
             product_uid = m.group(1) if m else None
             # 2. заполнить поля (partuids — ВСЕ рубрики, не только первая)
+            from rules_sheet import get as rule_get
+            options_title = rule_get("tilda", "options_title", TILDA_OPTIONS_TITLE)
+            options_raw = rule_get("tilda", "options", "")
+            try:
+                options = json.loads(options_raw) if options_raw else TILDA_OPTIONS
+            except json.JSONDecodeError:
+                options = TILDA_OPTIONS
             await self.client.call_tool("store_save_products", {
                 "projectid": project_id,
                 "productuid": product_uid,
@@ -180,9 +187,9 @@ class TildaCatalog:
                 # размеры букета (мм) и вес (г)
                 "pack_x": "250", "pack_y": "250", "pack_z": str(int(height_cm) * 10),
                 "pack_m": str(int(weight_g)),
-                # постоянные доп. товары-опции
-                "prod_option": TILDA_OPTIONS_TITLE,
-                "prod_variants": json.dumps(TILDA_OPTIONS, ensure_ascii=False),
+                # постоянные доп. товары-опции (из листа «Правила»)
+                "prod_option": options_title,
+                "prod_variants": json.dumps(options, ensure_ascii=False),
             })
             self.last_report = self._verify_product(project_id, product_uid, {
                 "title": title, "price": str(price_tilda), "partuids": partuids,

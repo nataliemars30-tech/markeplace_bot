@@ -12,8 +12,15 @@ import httpx
 
 from config import config
 from platform_rules import care_tips
+from rules_sheet import get as rule_get
 
 logger = logging.getLogger(__name__)
+
+
+def _standard_block() -> str:
+    """Постоянный финальный блок описания — единый для всех букетов (лист «Правила»)."""
+    return rule_get("тексты", "стандартный_блок_описания",
+                    "Доставляется по Санкт-Петербургу в транспортировочном аквабоксе с водой.")
 
 PROMPT = """Ты — профессиональный флористический копирайтер и SEO-специалист цветочной студии REN в Санкт-Петербурге.
 
@@ -52,8 +59,7 @@ def _fallback_description(name: str, color_mood: str, composition_str: str,
             f"форму и насыщенность оттенков.\n\n"
             f"Уход за букетом: {care_tips([{'name': n} for n in composition_str.split(',')])}. "
             f"В комплекте — кризал для продления стойкости цветов.\n\n"
-            f"Доставка по Санкт-Петербургу в транспортировочном аквабоксе с водой — цветы приезжают "
-            f"такими же свежими, какими покинули студию."
+            f"{_standard_block()}"
         )
     return (
         f"Авторский букет «{name}» от цветочной студии REN, Санкт-Петербург 🌿\n\n"
@@ -63,7 +69,7 @@ def _fallback_description(name: str, color_mood: str, composition_str: str,
         f"свидание — или просто без повода ✨\n\n"
         f"Уход за букетом: {care_tips([{'name': n} for n in composition_str.split(',')])}. "
         f"В комплекте — кризал для продления стойкости цветов.\n\n"
-        f"Доставляется по Санкт-Петербургу в транспортировочном аквабоксе с водой 💐"
+        f"{_standard_block()}"
     )
 
 

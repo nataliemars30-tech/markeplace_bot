@@ -238,6 +238,15 @@ async def reviews_poller():
         await asyncio.sleep(REVIEWS_POLL_SECONDS)
 
 
+@dp.message(Command("reload"))
+async def cmd_reload_rules(message: types.Message):
+    """Перечитать правила из листа «Правила» без перезапуска бота."""
+    from rules_sheet import reload_rules
+    rules = reload_rules()
+    total = sum(len(v) for v in rules.values())
+    await message.reply(f"✅ Правила перечитаны из таблицы: {total} значений в {len(rules)} разделах.")
+
+
 @dp.message(Command("ok"))
 async def cmd_ok(message: types.Message):
     """Согласовать и отправить черновик ответа: /ok <id>."""
@@ -852,6 +861,9 @@ async def global_error_handler(event: types.ErrorEvent):
 async def main():
     logger.info("Инициализация локальной базы SQLite...")
     init_db()
+    logger.info("Загрузка правил из Google-таблицы (лист «Правила»)...")
+    from rules_sheet import load_rules
+    load_rules()
     logger.info("Запуск веб-сервера...")
     await start_photo_server()
     logger.info("Удаление старого вебхука...")

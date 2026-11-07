@@ -57,6 +57,7 @@ class FlowwowClient:
         """
         url = f"{self.BASE_URL}/products/create?shopId={self.shop_id}"
 
+        from rules_sheet import get as rule_get
         item: Dict[str, Any] = {
             "offerId": offer_id,
             "productType": 1,
@@ -70,6 +71,9 @@ class FlowwowClient:
             "minOrderCount": 1,
             "width": {"val": width_cm, "measure": 3},
             "height": {"val": height_cm, "measure": 3},
+            # Производитель — обязательное поле карточки (правило владельца, лист «Правила»)
+            "manufacturerName": rule_get("flowwow", "manufacturer_name", "REN, Россия"),
+            "manufacturerAddress": rule_get("flowwow", "manufacturer_address", "Россия, Санкт-Петербург"),
             "consist": consist or [{"name": name, "quantity": 1, "measure": 1}]
         }
 
@@ -119,6 +123,22 @@ class FlowwowClient:
         except Exception:
             pass
         return None
+
+    async def update_product(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Полное обновление существующей карточки (все актуальные поля обязательны).
+
+        Документация: «Изменение товаров» — POST /apiseller/products/update.
+        """
+        url = f"{self.BASE_URL}/products/update?shopId={self.shop_id}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=self._get_headers(), json={"products": [item]})
+        try:
+            data = resp.json()
+        except Exception:
+            raise FlowwowAPIError(f"Flowwow не-JSON [{resp.status_code}]: {resp.text[:250]}")
+        if resp.status_code != 200:
+            raise FlowwowAPIError(f"Flowwow [{resp.status_code}]: {data.get('message') or str(data)[:300]}")
+        return {"success": True, "data": data}
 
     async def get_reviews(self, page: int = 1, per_page: int = 50) -> List[Dict[str, Any]]:
         """Свежие отзывы магазина (sort=date_desc).
