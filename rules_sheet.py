@@ -185,6 +185,20 @@ def load_rules(force: bool = False) -> Dict[str, Dict[str, str]]:
         added = _seed_missing(ws, existing)
         if added:
             logger.info(f"Лист «Правила»: дописано {added} недостающих граф")
+        # убрать устаревшие английские строки, если рядом уже есть русская версия
+        to_delete = []
+        for idx, row in enumerate(values[1:], start=2):
+            if len(row) < 2:
+                continue
+            sec, key = row[0].strip(), row[1].strip()
+            for (rsec, ru), old in ALIASES.items():
+                if sec == rsec and key == old and (rsec, ru) in existing:
+                    to_delete.append(idx)
+                    break
+        for idx in reversed(to_delete):
+            ws.delete_rows(idx)
+        if to_delete:
+            logger.info(f"Лист «Правила»: удалено устаревших строк: {len(to_delete)}")
         logger.info(f"Правила загружены из таблицы: {sum(len(v) for v in rules.values())} значений")
     except Exception as e:
         logger.warning(f"Лист «Правила» недоступен ({e}) — использую значения по умолчанию")
