@@ -100,6 +100,7 @@ TILDA_PARTUIDS = {
     "Весенние": "704466005492",
     "Свадебные": "241430425742",
     "День Матери": "415483346843",
+    "Осенние": "554935962393",
 }
 
 
@@ -109,6 +110,7 @@ class TildaCatalog:
     def __init__(self):
         self.client = TildaMCPClient()
         self._available = bool(self.client.token)
+        self.last_report = ""  # детальная авто-проверка последнего товара
 
     async def create_product(
         self,
@@ -163,7 +165,55 @@ class TildaCatalog:
                 "seo_descr": seo_descr[:400],
                 "seo_keywords": seo_keywords[:500]
             })
-            return f"создан (uid {product_uid})"
+            self.last_report = self._verify_product(project_id, product_uid, {
+                "title": title, "price": str(price_tilda), "partuids": partuids,
+                "expected_photos": len(photo_urls), "seo_title": seo_title,
+                "full_article": full_article,
+            })
+            first_line = self.last_report.splitlines()[0]
+            return first_line
         except Exception as e:
             logger.warning(f"Tilda MCP ошибка: {e}")
             return f"ошибка ({e})"
+
+    def _verify_product(self, project_id: int, product_uid: str, expected: Dict[str, Any]) -> str:
+        """Авто-проверка опубликованного товара: бот сам сверяет, что Tilda
+        реально сохранила все поля, и выдаёт итог ✅/⚠️ (ручная проверка не нужна)."""
+        try:
+            raw = self.client.call_tool("store_get_products", {
+                "projectid": project_id, "productuid": int(product_uid)
+            })
+            data = json.loads(raw) if isinstance(raw, str) else raw
+            checks = []
+            ok = True
+
+            def check(label: str, cond: bool, detail: str = ""):
+                nonlocal ok
+                checks.append(f"{'✅' if cond else '⚠️'} {label}{' — ' + detail if detail else ''}")
+                ok = ok and cond
+
+            title = data.get("title", "")
+            check("название", title == expected["title"][:190], title[:60])
+            price = str(data.get("price", "")).split(".")[0]
+            check("цена", price == str(expected["price"]), f"{price}₽")
+            gallery = json.loads(data.get("gallery") or "[]")
+            with_alt = [g for g in gallery if g.get("alt")]
+            check("фото", len(gallery) == expected["expected_photos"],
+                  f"{len(gallery)}/{expected['expected_photos']}")
+            check("alt у фото", len(with_alt) == len(gallery), f"{len(with_alt)}/{len(gallery)}")
+            parts = (data.get("partuids") or "").split(",")
+            want_parts = [p for p in expected["partuids"].split(",") if p]
+            check("рубрики", all(p in parts for p in want_parts),
+                  f"{len([p for p in want_parts if p in parts])}/{len(want_parts)}")
+            check("SEO title", bool(data.get("seo_title")))
+            check("SEO descr", bool(data.get("seo_descr")))
+            check("SEO keywords", bool(data.get("seo_keywords")))
+            check("артикул", data.get("externalid") == expected["full_article"],
+                  str(data.get("externalid")))
+            check("описание", bool(data.get("descr")))
+
+            status = "проверен" if ok else "создан с замечаниями"
+            return f"{status} (uid {product_uid})\n" + "\n".join(checks)
+        except Exception as e:
+            logger.warning(f"Tilda verify ошибка: {e}")
+            return f"создан (uid {product_uid}), авто-проверка не удалась: {e}"

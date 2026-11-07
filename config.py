@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     tilda_mcp_token: str = Field("", alias="TILDA_MCP_TOKEN")
     tilda_project_id: int = Field(13756635, alias="TILDA_PROJECT_ID")
 
+    # LLM для черновиков ответов на отзывы (OpenAI-совместимый, опционально)
+    openai_api_key: str = Field("", alias="OPENAI_API_KEY")
+    openai_base_url: str = Field("https://api.moonshot.cn/v1", alias="OPENAI_BASE_URL")
+    openai_model: str = Field("moonshot-v1-8k", alias="OPENAI_MODEL")
+
     # Яндекс Диск
     yandex_disk_token: str = Field(..., alias="YANDEX_DISK_TOKEN")
 

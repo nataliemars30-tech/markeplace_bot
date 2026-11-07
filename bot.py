@@ -20,7 +20,7 @@ from aiogram.types import (
 from aiohttp import web
 
 from config import config
-from db import init_db, get_next_article, save_product_variation, save_review, mark_review_answered, get_pending_reviews
+from db import init_db, get_next_article, save_product_variation, save_review, mark_review_answered, get_pending_reviews, get_review_draft
 from yandex_disk import YandexDiskClient, YandexDiskError
 from moysklad_api import MoySkladClient, MoySkladAuthError, MoySkladAPIError
 from flowwow_api import FlowwowClient, FlowwowAPIError
@@ -196,36 +196,67 @@ def _stars(n: int) -> str:
 
 
 async def reviews_poller():
-    """Фоновая задача: следит за новыми отзывами Flowwow и шлёт уведомления.
+    """Фоновая задача: новые отзывы Flowwow -> уведомление с черновиком ответа.
 
-    Полный авто-ответ шаблоном НЕ отправляем — магазин отвечает вручную
-    через команду /otvet <id> <текст>, чтобы тон всегда был живой.
+    Черновик генерирует LLM (если задан OPENAI_API_KEY) или шаблон.
+    Флорист согласует: /ok <id> отправляет черновик, /otvet <id> <текст> — свой вариант.
+    Без подтверждения ничего не публикуется.
     """
+    from review_replier import make_draft
+
     await asyncio.sleep(60)  # дать боту инициализироваться
     while True:
         try:
             items = await fw_client.get_reviews(page=1, per_page=30)
             for rev in items:
-                if save_review(rev):
-                    score = rev.get("shopScore", 0)
-                    text = (rev.get("text") or "").strip() or "— без текста —"
-                    author = rev.get("authorName") or "Аноним"
-                    msg = (
-                        f"💬 <b>Новый отзыв на Flowwow!</b>\n\n"
-                        f"{_stars(score)} <b>{score}/5</b> · {esc(author)} · {esc(rev.get('date', ''))}\n"
-                        f"{esc(text[:700])}\n\n"
-                        f"Ответить: <code>/otvet {rev['id']} ваш текст</code>"
-                    )
-                    for uid in config.allowed_tg_ids:
-                        try:
-                            await bot.send_message(uid, msg, parse_mode="HTML")
-                        except Exception as e:
-                            logger.warning(f"Не удалось отправить уведомление об отзыве {uid}: {e}")
+                if rev.get("answerShop"):
+                    continue  # магазин уже ответил — не пристаём
+                if not save_review(rev, draft=await make_draft(rev)):
+                    continue  # уже уведомляли
+                score = rev.get("shopScore", 0)
+                text = (rev.get("text") or "").strip() or "— без текста —"
+                author = rev.get("authorName") or "Аноним"
+                draft = get_review_draft(rev["id"])
+                msg = (
+                    f"💬 <b>Новый отзыв на Flowwow!</b>\n\n"
+                    f"{_stars(score)} <b>{score}/5</b> · {esc(author)} · {esc(rev.get('date', ''))}\n"
+                    f"{esc(text[:600])}\n\n"
+                    f"✍️ <b>Черновик ответа:</b>\n{esc(draft)}\n\n"
+                    f"Отправить черновик: <code>/ok {rev['id']}</code>\n"
+                    f"Своим текстом: <code>/otvet {rev['id']} ваш текст</code>"
+                )
+                for uid in config.allowed_tg_ids:
+                    try:
+                        await bot.send_message(uid, msg, parse_mode="HTML")
+                    except Exception as e:
+                        logger.warning(f"Не удалось отправить уведомление об отзыве {uid}: {e}")
             if items:
                 logger.info(f"Отзывы: проверено {len(items)} свежих")
         except Exception as e:
             logger.warning(f"Поллер отзывов: {e}")
         await asyncio.sleep(REVIEWS_POLL_SECONDS)
+
+
+@dp.message(Command("ok"))
+async def cmd_ok(message: types.Message):
+    """Согласовать и отправить черновик ответа: /ok <id>."""
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip().isdigit():
+        await message.reply("Формат: /ok 11349849 — отправить подготовленный черновик")
+        return
+    review_id = int(parts[1].strip())
+    draft = get_review_draft(review_id)
+    if not draft:
+        await message.reply(f"Черновик для отзыва {review_id} не найден. "
+                            f"Ответьте вручную: /otvet {review_id} ваш текст")
+        return
+    status = await message.answer(f"⏳ Публикую ответ на отзыв {review_id}…")
+    try:
+        await fw_client.answer_review(review_id, draft)
+        mark_review_answered(review_id, draft)
+        await status.edit_text(f"✅ Ответ на отзыв {review_id} опубликован:\n{esc(draft)}")
+    except FlowwowAPIError as e:
+        await status.edit_text(f"❌ Flowwow не принял ответ: {esc(str(e))}")
 
 
 @dp.message(Command("otvet"))
@@ -696,6 +727,8 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         fw_results.append(
             f"  ↳ Маркет: {market_status} | Еда: {eda_status} | Tilda: {tilda_status}"
         )
+        if tilda_catalog.last_report:
+            fw_results.append("\n".join(tilda_catalog.last_report.splitlines()[1:]))
 
         # --- Ссылка на карточку Flowwow для таблицы ---
         fw_url = ""

@@ -61,7 +61,7 @@ def init_db() -> None:
 
 # ------------------ Отзывы Flowwow ------------------
 
-def save_review(review: Dict[str, Any]) -> bool:
+def save_review(review: Dict[str, Any], draft: str = "") -> bool:
     """Сохранить отзыв, если его ещё нет. Возвращает True для новых."""
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -73,18 +73,31 @@ def save_review(review: Dict[str, Any]) -> bool:
                 text TEXT,
                 review_date TEXT,
                 answer_shop TEXT,
+                draft TEXT,
                 notified_at TIMESTAMP,
                 answered_at TIMESTAMP,
                 answer_text TEXT
             );
         """)
+        try:
+            cursor.execute("SELECT draft FROM reviews LIMIT 1;")
+        except sqlite3.OperationalError:
+            cursor.execute("ALTER TABLE reviews ADD COLUMN draft TEXT;")
         cursor.execute(
-            "INSERT OR IGNORE INTO reviews (review_id, shop_score, author, text, review_date, answer_shop, notified_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);",
+            "INSERT OR IGNORE INTO reviews (review_id, shop_score, author, text, review_date, answer_shop, draft, notified_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);",
             (review.get("id"), review.get("shopScore"), review.get("authorName", ""),
-             review.get("text", ""), review.get("date", ""), review.get("answerShop", ""))
+             review.get("text", ""), review.get("date", ""), review.get("answerShop", ""), draft)
         )
         conn.commit()
         return cursor.rowcount > 0
+
+
+def get_review_draft(review_id: int) -> str:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT draft FROM reviews WHERE review_id = ?;", (review_id,)
+        ).fetchone()
+        return row["draft"] if row and row["draft"] else ""
 
 
 def mark_review_answered(review_id: int, answer: str) -> None:
