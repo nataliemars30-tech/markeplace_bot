@@ -120,6 +120,43 @@ class FlowwowClient:
             pass
         return None
 
+    async def get_reviews(self, page: int = 1, per_page: int = 50) -> List[Dict[str, Any]]:
+        """Свежие отзывы магазина (sort=date_desc).
+
+        Проверено живым вызовом (2026-11-07): GET /apiseller/shops/review?shopId=...
+        Элементы: id, text, shopScore, courierScore, authorName, date,
+        answerShop (пустая строка = магазин ещё не ответил), фото товара.
+        Вебхуков для отзывов у Flowwow нет — только поллинг.
+        """
+        url = f"{self.BASE_URL}/shops/review?shopId={self.shop_id}&sort=date_desc&page={page}&perPage={per_page}"
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(url, headers=self._get_headers())
+        try:
+            data = resp.json()
+        except Exception:
+            raise FlowwowAPIError(f"Flowwow не-JSON [{resp.status_code}]: {resp.text[:200]}")
+        if resp.status_code != 200:
+            raise FlowwowAPIError(f"Flowwow: {data.get('message') or data}")
+        return data.get("items", [])
+
+    async def answer_review(self, review_id: int, text: str) -> Dict[str, Any]:
+        """Публичный ответ магазина на отзыв.
+
+        Проверено (2026-11-07): POST /apiseller/review/answer?shopId=...
+        Тело: {"reviewId": N, "answer": "текст"}; несуществующий id -> 404.
+        """
+        url = f"{self.BASE_URL}/review/answer?shopId={self.shop_id}"
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(url, headers=self._get_headers(),
+                                     json={"reviewId": review_id, "answer": text})
+        try:
+            data = resp.json()
+        except Exception:
+            raise FlowwowAPIError(f"Flowwow не-JSON [{resp.status_code}]: {resp.text[:200]}")
+        if resp.status_code != 200 or data.get("status") == 0:
+            raise FlowwowAPIError(f"Flowwow: {data.get('message') or data}")
+        return {"success": True, "data": data}
+
     async def archive_product(self, offer_id: str) -> Dict[str, Any]:
         """Перенос товара в архив (команда /purge)."""
         url = f"{self.BASE_URL}/products/archive?shopId={self.shop_id}"

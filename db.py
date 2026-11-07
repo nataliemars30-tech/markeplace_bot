@@ -59,7 +59,52 @@ def init_db() -> None:
         conn.commit()
 
 
-def get_next_article(root_category: str) -> str:
+# ------------------ Отзывы Flowwow ------------------
+
+def save_review(review: Dict[str, Any]) -> bool:
+    """Сохранить отзыв, если его ещё нет. Возвращает True для новых."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS reviews (
+                review_id INTEGER PRIMARY KEY,
+                shop_score INTEGER,
+                author TEXT,
+                text TEXT,
+                review_date TEXT,
+                answer_shop TEXT,
+                notified_at TIMESTAMP,
+                answered_at TIMESTAMP,
+                answer_text TEXT
+            );
+        """)
+        cursor.execute(
+            "INSERT OR IGNORE INTO reviews (review_id, shop_score, author, text, review_date, answer_shop, notified_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);",
+            (review.get("id"), review.get("shopScore"), review.get("authorName", ""),
+             review.get("text", ""), review.get("date", ""), review.get("answerShop", ""))
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def mark_review_answered(review_id: int, answer: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE reviews SET answered_at = CURRENT_TIMESTAMP, answer_text = ? WHERE review_id = ?;",
+            (answer, review_id)
+        )
+        conn.commit()
+
+
+def get_pending_reviews() -> List[Dict[str, Any]]:
+    """Отзывы без ответа магазина (для команды /otvet без аргументов)."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT review_id, shop_score, author, text, review_date
+            FROM reviews WHERE answered_at IS NULL ORDER BY review_id DESC LIMIT 10;
+        """)
+        return [dict(row) for row in cursor.fetchall()]
     """Генерация следующего сквозного артикула с префиксом в зависимости от категории."""
     prefix_map = {
         "Букеты": "REN",

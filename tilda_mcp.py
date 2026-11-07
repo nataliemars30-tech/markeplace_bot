@@ -28,6 +28,13 @@ class TildaMCPClient:
         self.token = token or getattr(config, "tilda_mcp_token", "")
         self.session_id: Optional[str] = None
 
+    # Tilda MCP диспетчеризует запросы по заголовкам (проверено 2026-11-07):
+    # tools/call требует Mcp-Method + Mcp-Name и _meta в params.
+    META = {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {},
+    }
+
     async def _post(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         headers = {
             "Authorization": f"Bearer {self.token}",
@@ -35,8 +42,10 @@ class TildaMCPClient:
             "Accept": "application/json, text/event-stream",
             "MCP-Protocol-Version": self.PROTOCOL,
         }
-        if self.session_id:
-            headers["Mcp-Session-Id"] = self.session_id
+        if payload.get("method") == "tools/call":
+            headers["Mcp-Method"] = "tools/call"
+            headers["Mcp-Name"] = payload.get("params", {}).get("name", "")
+            payload["params"]["_meta"] = self.META
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(self.URL, json=payload, headers=headers)
         if resp.status_code >= 400:

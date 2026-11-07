@@ -20,7 +20,7 @@ from aiogram.types import (
 from aiohttp import web
 
 from config import config
-from db import init_db, get_next_article, save_product_variation
+from db import init_db, get_next_article, save_product_variation, save_review, mark_review_answered, get_pending_reviews
 from yandex_disk import YandexDiskClient, YandexDiskError
 from moysklad_api import MoySkladClient, MoySkladAuthError, MoySkladAPIError
 from flowwow_api import FlowwowClient, FlowwowAPIError
@@ -185,6 +185,82 @@ async def cmd_purge(message: types.Message, state: FSMContext):
 
     await status.edit_text(f"🧹 <b>{article}</b>\n" + "\n".join(f"• {esc(r)}" for r in results),
                            parse_mode="HTML")
+
+
+# ------------------ Отзывы Flowwow: уведомления и ответы ------------------
+REVIEWS_POLL_SECONDS = 1800  # поллинг раз в 30 минут (вебхуков у Flowwow нет)
+
+
+def _stars(n: int) -> str:
+    return "⭐" * max(1, min(5, int(n or 0)))
+
+
+async def reviews_poller():
+    """Фоновая задача: следит за новыми отзывами Flowwow и шлёт уведомления.
+
+    Полный авто-ответ шаблоном НЕ отправляем — магазин отвечает вручную
+    через команду /otvet <id> <текст>, чтобы тон всегда был живой.
+    """
+    await asyncio.sleep(60)  # дать боту инициализироваться
+    while True:
+        try:
+            items = await fw_client.get_reviews(page=1, per_page=30)
+            for rev in items:
+                if save_review(rev):
+                    score = rev.get("shopScore", 0)
+                    text = (rev.get("text") or "").strip() or "— без текста —"
+                    author = rev.get("authorName") or "Аноним"
+                    msg = (
+                        f"💬 <b>Новый отзыв на Flowwow!</b>\n\n"
+                        f"{_stars(score)} <b>{score}/5</b> · {esc(author)} · {esc(rev.get('date', ''))}\n"
+                        f"{esc(text[:700])}\n\n"
+                        f"Ответить: <code>/otvet {rev['id']} ваш текст</code>"
+                    )
+                    for uid in config.allowed_tg_ids:
+                        try:
+                            await bot.send_message(uid, msg, parse_mode="HTML")
+                        except Exception as e:
+                            logger.warning(f"Не удалось отправить уведомление об отзыве {uid}: {e}")
+            if items:
+                logger.info(f"Отзывы: проверено {len(items)} свежих")
+        except Exception as e:
+            logger.warning(f"Поллер отзывов: {e}")
+        await asyncio.sleep(REVIEWS_POLL_SECONDS)
+
+
+@dp.message(Command("otvet"))
+async def cmd_otvet(message: types.Message):
+    """Ответ магазина на отзыв Flowwow: /otvet <id> <текст>.
+
+    Без аргументов показывает список отзывов, ожидающих ответа.
+    """
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 2:
+        pending = get_pending_reviews()
+        if not pending:
+            await message.reply("✅ Отзывов без ответа нет.")
+            return
+        lines = ["💬 <b>Отзывы без ответа:</b>\n"]
+        for r in pending:
+            snippet = (r["text"] or "— без текста —")[:120]
+            lines.append(
+                f"{_stars(r['shop_score'])} <code>{r['review_id']}</code> · {esc(r['author'] or 'Аноним')}: {esc(snippet)}"
+            )
+        lines.append("\nОтветить: /otvet &lt;id&gt; &lt;текст&gt;")
+        await message.answer("\n".join(lines), parse_mode="HTML")
+        return
+    if not parts[1].isdigit() or len(parts) < 3 or not parts[2].strip():
+        await message.reply("Формат: /otvet 11349849 Спасибо за отзыв! Будем рады видеть вас снова 🌸")
+        return
+    review_id = int(parts[1])
+    answer = parts[2].strip()
+    status = await message.answer(f"⏳ Публикую ответ на отзыв {review_id}…")
+    try:
+        await fw_client.answer_review(review_id, answer)
+        mark_review_answered(review_id, answer)
+        await status.edit_text(f"✅ Ответ на отзыв {review_id} опубликован на Flowwow.")
+    except FlowwowAPIError as e:
+        await status.edit_text(f"❌ Flowwow не принял ответ: {esc(str(e))}")
 
 
 # ------------------ Скрытие букета со всех витрин ------------------
@@ -733,6 +809,8 @@ async def main():
     await start_photo_server()
     logger.info("Удаление старого вебхука...")
     await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Запуск поллера отзывов Flowwow...")
+    asyncio.create_task(reviews_poller())
     logger.info("Запуск бота...")
     await dp.start_polling(bot)
 
