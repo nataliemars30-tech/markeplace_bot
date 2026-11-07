@@ -269,7 +269,7 @@ class YandexMarketClient:
                     break
 
         from rules_sheet import get as rule_get
-        bouquet_width = int(rule_get("market", "bouquet_width_cm", "25") or 25)
+        bouquet_width = int(rule_get("market", "ширина_букета_см", "25") or 25)
         offer = {
             "offerId": offer_id,
             "name": name[:256],

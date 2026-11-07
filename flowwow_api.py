@@ -72,8 +72,8 @@ class FlowwowClient:
             "width": {"val": width_cm, "measure": 3},
             "height": {"val": height_cm, "measure": 3},
             # Производитель — обязательное поле карточки (правило владельца, лист «Правила»)
-            "manufacturerName": rule_get("flowwow", "manufacturer_name", "REN, Россия"),
-            "manufacturerAddress": rule_get("flowwow", "manufacturer_address", "Россия, Санкт-Петербург"),
+            "manufacturerName": rule_get("flowwow", "производитель_название", "REN, Россия"),
+            "manufacturerAddress": rule_get("flowwow", "производитель_адрес", "Россия, Санкт-Петербург"),
             "consist": consist or [{"name": name, "quantity": 1, "measure": 1}]
         }
 

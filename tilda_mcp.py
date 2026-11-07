@@ -165,8 +165,8 @@ class TildaCatalog:
             product_uid = m.group(1) if m else None
             # 2. заполнить поля (partuids — ВСЕ рубрики, не только первая)
             from rules_sheet import get as rule_get
-            options_title = rule_get("tilda", "options_title", TILDA_OPTIONS_TITLE)
-            options_raw = rule_get("tilda", "options", "")
+            options_title = rule_get("tilda", "опции_название", TILDA_OPTIONS_TITLE)
+            options_raw = rule_get("tilda", "опции", "")
             try:
                 options = json.loads(options_raw) if options_raw else TILDA_OPTIONS
             except json.JSONDecodeError:
