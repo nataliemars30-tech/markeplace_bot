@@ -148,7 +148,7 @@ class TildaCatalog:
             import re as _re
             m = _re.search(r"\b(\d{6,})\b", created)
             product_uid = m.group(1) if m else None
-            # 2. заполнить поля
+            # 2. заполнить поля (partuids — ВСЕ рубрики, не только первая)
             await self.client.call_tool("store_save_products", {
                 "projectid": project_id,
                 "productuid": product_uid,
