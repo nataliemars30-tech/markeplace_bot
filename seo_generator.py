@@ -6,6 +6,7 @@
 """
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -49,25 +50,37 @@ PROMPT = """Ты — профессиональный флористически
 
 def _fallback_description(name: str, color_mood: str, composition_str: str,
                           packaging_type: str, platform: str) -> str:
+    from platform_rules import _instrumental
+    items = [s.strip() for s in composition_str.split(",") if s.strip()]
+    # падеж для «в … гамме/оттенках»: Кремовый -> кремовой, Розовый -> розовой
+    adj = color_mood.lower()
+    if adj.endswith("ый"):
+        adj = adj[:-2] + "ой"
+    elif adj.endswith("ий"):
+        adj = adj[:-2] + "ей"
     if platform == "market":
         return (
             f"Авторский букет «{name}» от цветочной студии REN в Санкт-Петербурге.\n\n"
             f"Состав букета: {composition_str}. Оформление: {packaging_type.lower()}.\n\n"
-            f"Композиция в {color_mood.lower()}й гамме подойдёт на день рождения, юбилей, свидание "
+            f"Композиция в {adj} гамме подойдёт на день рождения, юбилей, свидание "
             f"или как знак внимания без повода — для любимой, мамы, подруги или коллеги. "
             f"Цветы утренней поставки отбираются флористом вручную, поэтому букет долго держит "
             f"форму и насыщенность оттенков.\n\n"
-            f"Уход за букетом: {care_tips([{'name': n} for n in composition_str.split(',')])}. "
+            f"Уход за букетом: {care_tips([{'name': n} for n in items])}. "
             f"В комплекте — кризал для продления стойкости цветов.\n\n"
             f"{_standard_block()}"
         )
+    # Flowwow: 4-блочная SEO-структура по инструкции владельца (08.11.2026)
+    flower_names = [re.sub(r"\s*—\s*\d+\s*шт\.?$", "", it).strip() for it in items]
+    lead_pair = " и ".join(_instrumental(f) for f in flower_names[:2]) if flower_names else name.lower()
+    consist_lines = "\n".join(f"— {it}" for it in items) if items else f"— {name}"
     return (
-        f"Авторский букет «{name}» от цветочной студии REN, Санкт-Петербург 🌿\n\n"
-        f"Состав: {composition_str}. Игра оттенков в {color_mood.lower()}й гамме, воздушная фактура "
-        f"и фирменная сборка REN — композиция выглядит так, будто её только собрали в саду 🌸\n\n"
-        f"Кому дарить: любимой 💕, маме 🤱, подруге, коллеге. Повод: день рождения 🎂, юбилей, "
-        f"свидание — или просто без повода ✨\n\n"
-        f"Уход за букетом: {care_tips([{'name': n} for n in composition_str.split(',')])}. "
+        f"Авторский букет с {lead_pair} в {adj} гамме от флористической студии "
+        f"REN в Санкт-Петербурге. Изысканный подарок для любимой девушки, мамы, супруги или коллеги "
+        f"на день рождения, романтическое свидание, годовщину или элегантный комплимент без повода.\n\n"
+        f"В составе букета:\n{consist_lines}.\n"
+        f"Оформление: {packaging_type.lower()} в эстетике современного флористического минимализма.\n\n"
+        f"Индивидуальные рекомендации по уходу:\n{care_tips([{'name': n} for n in items])}. "
         f"В комплекте — кризал для продления стойкости цветов.\n\n"
         f"{_standard_block()}"
     )
