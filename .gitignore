@@ -14,3 +14,4 @@ data/*.json
 data/*.csv
 data/temp/
 !data/.gitkeep
+ren011_fw_update.json
