@@ -62,7 +62,7 @@ def build_yml_xml(products: List[Dict[str, Any]]) -> str:
 
         ET.SubElement(offer, "description").text = (
             f"Авторский букет от студии REN (Санкт-Петербург). "
-            f"Свежие премиум-сорта, фирменная упаковка, аквабокс и открытка."
+            f"Свежие премиум-сорта, фирменная упаковка, кризал в комплекте."
         )
 
     return ET.tostring(yml_catalog, encoding="utf-8", xml_declaration=True).decode("utf-8")

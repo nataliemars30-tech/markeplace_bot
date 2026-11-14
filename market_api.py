@@ -222,7 +222,8 @@ class YandexMarketClient:
         flower_names: Optional[List[str]] = None,
         filter_color_id: Optional[int] = None,
         video_url: Optional[str] = None,
-        width_cm: int = 25
+        width_cm: int = 25,
+        product_noun: str = "Букет"
     ) -> Dict[str, Any]:
         """Полноценная карточка товара в каталоге кабинета. Только НОВЫЕ offerId.
 
@@ -244,7 +245,8 @@ class YandexMarketClient:
             # Оформление: ТОЛЬКО плёнка или под ленту (аквабокс никому не указываем — правило владельца)
             {"parameterId": PARAMS["Сборка"], "valueId": 44625852, "value": "на стеблях"},
             {"parameterId": PARAMS["Дополнительная информация"],
-             "value": "Букет собирается флористом в день доставки. Цветочная студия REN, Санкт-Петербург."},
+             "value": f"{product_noun} собирается флористом в день доставки. "
+                      f"Цветочная студия REN, Санкт-Петербург."},
             # Прочие характеристики: формат «Название:значение» (требование Маркета)
             {"parameterId": PARAMS["Прочие характеристики"],
              "value": "Вариативность состава:состав и оттенки могут незначительно меняться в зависимости "

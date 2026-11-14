@@ -556,7 +556,8 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
     width_cm = int(data.get("width_cm") or 25)
     composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
     fw_title = build_marketplace_title(bouquet_name, color, dpos, noun=noun,
-                                       quoted=bool(data.get("fw_quoted")))
+                                       quoted=bool(data.get("fw_quoted")),
+                                       limit=150, seo_suffix="— купить с доставкой в СПб")
     # Описание Еды/Tilda: БЕЗ аквабокса (железное правило), с SEO-ключами
     eda_desc = (f"{noun} от цветочной студии REN, Санкт-Петербург. "
                 f"Состав: {composition_text}. Свежие цветы утренней поставки, кризал в комплекте. "
@@ -587,6 +588,7 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
                 flower_names=[p["name"] for p in dpos],
                 filter_color_id=market_filter_color_id(color),
                 width_cm=width_cm,
+                product_noun=noun,
             )
             results.append(f"✅ Маркет: карточка отправлена ({prices['yandex_market']}₽)")
         except YandexMarketError as e:

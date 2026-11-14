@@ -258,7 +258,8 @@ def generate_market_seo_description(name: str, composition_str: str,
         f"Букет подойдёт на день рождения, юбилей, свидание, годовщину или как знак внимания "
         f"без повода — для любимой девушки, мамы, подруги или коллеги. Свежие цветы сортируются "
         f"флористами в день сборки, поэтому букет долго держит форму и насыщенность оттенков.\n\n"
-        f"В комплекте: транспортировочный аквабокс с водой и кризал для продления стойкости цветов.\n\n"
+        f"В комплекте кризал для продления стойкости цветов. Доставка по Санкт-Петербургу "
+        f"в фирменной упаковке.\n\n"
         f"Студия REN: авторская сборка профессиональными флористами, строгий отбор свежих "
         f"цветов на поставке, бережная доставка по Санкт-Петербургу в защитном боксе.\n\n"
         f"Уход за букетом: {care_tips([{'name': n} for n in composition_str.split(',')])}."
@@ -343,10 +344,11 @@ def _cut_at_word(text: str, limit: int) -> str:
 
 def build_marketplace_title(bouquet_name: str, color_or_season: str,
                             dpos: List[Dict[str, Any]], limit: int = 100,
-                            noun: str = "Букет", quoted: bool = True) -> str:
-    """Формула ТЗ: [Существительное] [настроение] «[Имя]» с [цветы].
-    noun: Букет/Корзина/Коробка/Композиция (по подкатегории Flowwow).
-    Если название уже содержит цветы — список не дублируем. Обрезка по границе слова."""
+                            noun: str = "Букет", quoted: bool = True,
+                            seo_suffix: str = "") -> str:
+    """Формула ТЗ: [Существительное] [настроение] «[Имя]» с [цветы] [SEO-хвост].
+    noun: Букет/Корзина/Коробка/Композиция. seo_suffix: для Маркета '— купить с доставкой в СПб'.
+    Обрезка строго по границе слова. Если в названии уже есть цветы — список не дублируем."""
     adj = COLOR_ADJECTIVES.get(color_or_season, "авторский")
     name = str(bouquet_name).strip()
     name_low = name.lower()
@@ -354,33 +356,36 @@ def build_marketplace_title(bouquet_name: str, color_or_season: str,
         base = f"{noun} {adj} «{name}»"
     else:
         base = f"{noun} {name}"  # старые названия — без прилагательного
+    limit_body = limit - len(seo_suffix) - 1 if seo_suffix else limit
     # если в названии уже есть цветы — не дублируем перечень
     flower_stems = ("роз", "тюльп", "пион", "гвозд", "хриз", "гортенз", "эустом",
                     "диант", "гербер", "альстр", "маттиол", "гипсоф", "ирис", "калла",
                     "фрез", "лили", "орхид", "георгин", "проте", "анемон", "ранункул",
                     "астр", "нарцисс", "гладиол", "сирен", "мимоз", "лаванд", "амарилл")
     if any(st in name_low for st in flower_stems):
-        return _cut_at_word(base, limit)
-    flowers: List[str] = []
-    for p in dpos or []:
-        n = str(p.get("name", "")).lower()
-        if not n or any(g in n for g in GREEN_WORDS):
-            continue
-        if n not in flowers:
-            flowers.append(n)
-    if not flowers:
-        return _cut_at_word(base, limit)
-    title, added = base, []
-    for fl in flowers[:5]:
-        cand = f"{title}{', ' if added else ' с '}{_instrumental(fl)}"
-        if len(cand) <= limit:
-            title = cand
-            added.append(fl)
-        else:
-            break
-    if not added:  # даже один цветок не влез — жёсткая обрезка по слову
-        title = _cut_at_word(f"{base} с {_instrumental(flowers[0])}", limit)
-    return title.strip().rstrip(",")
+        body = _cut_at_word(base, limit_body)
+    else:
+        flowers: List[str] = []
+        for p in dpos or []:
+            n = str(p.get("name", "")).lower()
+            if not n or any(g in n for g in GREEN_WORDS):
+                continue
+            if n not in flowers:
+                flowers.append(n)
+        body = base
+        if flowers:
+            added = []
+            for fl in flowers[:5]:
+                cand = f"{body}{', ' if added else ' с '}{_instrumental(fl)}"
+                if len(cand) <= limit_body:
+                    body = cand
+                    added.append(fl)
+                else:
+                    break
+            if not added:
+                body = _cut_at_word(f"{base} с {_instrumental(flowers[0])}", limit_body)
+    title = f"{body} {seo_suffix}".strip() if seo_suffix else body
+    return _cut_at_word(title.strip().rstrip(","), limit)
 
 
 # ------------------ Очистка названий из МойСклада ------------------
