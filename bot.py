@@ -269,6 +269,15 @@ async def sync_number_entered(message: types.Message, state: FSMContext):
     await _sync_prepare(message, state, parts[0], parts[1] if len(parts) > 1 else "Разноцветный")
 
 
+@dp.message(F.text.regexp(r"^\d{5,10}$"))
+async def sync_number_direct(message: types.Message, state: FSMContext):
+    """Номер товара Flowwow, присланный сразу (без кнопки) — копируем."""
+    current = await state.get_state()
+    if current:  # внутри другого сценария — не мешаем
+        return
+    await _sync_prepare(message, state, message.text.strip(), "Разноцветный")
+
+
 @dp.message(Command("копия", "sync"))
 async def cmd_sync(message: types.Message, state: FSMContext):
     """Копирование существующего товара Flowwow на ВЫБРАННЫЕ площадки.
