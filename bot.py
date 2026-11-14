@@ -254,19 +254,30 @@ def _sync_keyboard(selected: set) -> InlineKeyboardMarkup:
 @dp.message(Command("sync"))
 async def cmd_sync(message: types.Message, state: FSMContext):
     """Копирование существующего товара Flowwow на ВЫБРАННЫЕ площадки.
-    Формат: /sync REN-011-M [цвет/гамма]"""
+    Формат: /sync REN-011-M [цвет]  — для товаров бота (по артикулу)
+            /sync 12345678 [цвет]   — для старых товаров Flowwow (число из ссылки на товар)"""
     parts = (message.text or "").split(maxsplit=2)
-    if len(parts) < 2 or not re.fullmatch(r"REN(-[A-Z])?-\d{3}(-[A-Z0-9]+)?", parts[1].strip().upper()):
-        await message.reply("Формат: /sync REN-011-M [цвет]\n"
-                            "Копирует товар, который есть на Flowwow, на выбранные площадки.")
+    if len(parts) < 2:
+        await message.reply("Формат:\n/sync REN-011-M [цвет] — товар создан ботом\n"
+                            "/sync 12345678 [цвет] — старый товар Flowwow (число из ссылки)\n"
+                            "/fwlist — список товаров Flowwow с номерами")
         return
-    article = parts[1].strip().upper()
+    arg = parts[1].strip()
     color = parts[2].strip() if len(parts) > 2 else "Разноцветный"
-    status = await message.answer(f"⏳ Ищу {article} на Flowwow…")
+    status = await message.answer(f"⏳ Ищу товар на Flowwow…")
 
-    item = await fw_client.get_product(article)
+    product_id = None
+    if arg.isdigit():
+        product_id = int(arg)
+        item = await fw_client.get_product(product_id=product_id)
+    elif re.fullmatch(r"REN(-[A-Z])?-\d{3}(-[A-Z0-9]+)?", arg.upper()):
+        item = await fw_client.get_product(offer_id=arg.upper())
+    else:
+        await status.edit_text("❌ Не поняла. Артикул вида REN-011-М или число — productId из ссылки на товар Flowwow.\n"
+                               "Список товаров: /fwlist")
+        return
     if not item:
-        await status.edit_text(f"❌ {article} не найден на Flowwow. Проверьте артикул.")
+        await status.edit_text(f"❌ Товар не найден на Flowwow. Проверьте номер (/fwlist покажет список).")
         return
 
     # Базовая цена из цены Flowwow (обратная матрица: fw=(base+150)×1.5)
@@ -282,8 +293,14 @@ async def cmd_sync(message: types.Message, state: FSMContext):
         await status.edit_text("❌ У товара на Flowwow нет фото — нечего копировать.")
         return
 
-    m_art = re.match(r"(REN(-[A-Z])?-\d{3})(?:-([A-Z0-9]+))?$", article)
-    base_article, label = m_art.group(1), (m_art.group(3) or "M")
+    if product_id:
+        # Старый товар без артикула: выделяем новый номер из счётчика
+        article = f"{get_next_article('Букеты')}-M"
+        label = "M"
+    else:
+        article = arg.upper()
+        m_art = re.match(r"(REN(-[A-Z])?-\d{3})(?:-([A-Z0-9]+))?$", article)
+        label = (m_art.group(3) or "M")
 
     # Состав: consist карточки, иначе парсим из описания («Состав: А — 2 шт, Б — 1 шт.»)
     dpos = []
@@ -459,6 +476,26 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
                                    "\n".join(results), parse_mode="HTML")
     except Exception:
         await status_msg.answer(f"🔄 <b>{article}</b>\n" + "\n".join(results), parse_mode="HTML")
+
+
+@dp.message(Command("fwlist"))
+async def cmd_fwlist(message: types.Message):
+    """Список товаров Flowwow: номер (productId), название, цена — для команды /sync."""
+    parts = (message.text or "").split()
+    page = int(parts[1]) - 1 if len(parts) > 1 and parts[1].isdigit() else 0
+    status = await message.answer("⏳ Загружаю список товаров Flowwow…")
+    data = await fw_client.list_products(page=page, limit=30)
+    items = data.get("items", [])
+    total = data.get("total", 0)
+    if not items:
+        await status.edit_text("Товаров не найдено.")
+        return
+    lines = [f"<b>Товары Flowwow</b> (стр. {page + 1}, всего {total}):\n"]
+    for it in items:
+        name = esc(str(it.get("name", ""))[:55])
+        lines.append(f"<code>{it.get('productId')}</code> · {name} · {it.get('price')}₽")
+    lines.append(f"\nКопировать: <code>/sync [номер] [цвет]</code> · страница: /fwlist {page + 2}")
+    await status.edit_text("\n".join(lines), parse_mode="HTML")
 
 
 @dp.message(Command("reload"))

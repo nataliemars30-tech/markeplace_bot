@@ -109,20 +109,40 @@ class FlowwowClient:
             return {"success": True}
         raise FlowwowAPIError(f"Flowwow: {data.get('message') or data}")
 
-    async def get_product(self, offer_id: str) -> Optional[Dict[str, Any]]:
-        """Полная карточка товара по offerId (для команды /sync)."""
+    async def get_product(self, offer_id: Optional[str] = None,
+                          product_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """Полная карточка товара по offerId или productId (для команды /sync)."""
         url = f"{self.BASE_URL}/products"
+        body: Dict[str, Any] = {"shopId": self.shop_id}
+        if offer_id:
+            body["offerIds"] = [offer_id]
+        if product_id:
+            body["productIds"] = [product_id]
         async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(url, headers=self._get_headers(),
-                                     json={"shopId": self.shop_id, "offerIds": [offer_id]})
+            resp = await client.post(url, headers=self._get_headers(), json=body)
         try:
             data = resp.json()
             for item in data.get("items", []):
-                if item.get("offerId") == offer_id:
+                if offer_id and item.get("offerId") == offer_id:
+                    return item
+                if product_id and item.get("productId") == product_id:
                     return item
         except Exception:
             pass
         return None
+
+    async def list_products(self, page: int = 0, limit: int = 50,
+                            status: str = "active") -> Dict[str, Any]:
+        """Листинг товаров магазина (для /fwlist)."""
+        url = f"{self.BASE_URL}/products"
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(url, headers=self._get_headers(),
+                                     json={"shopId": self.shop_id, "status": status,
+                                           "page": page, "limit": limit})
+        try:
+            return resp.json()
+        except Exception:
+            return {"items": [], "total": 0}
 
     async def get_product_url(self, offer_id: str) -> Optional[str]:
         """Получить публичную ссылку на карточку товара по offerId."""
