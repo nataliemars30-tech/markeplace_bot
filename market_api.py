@@ -45,8 +45,13 @@ PARAMS = {
 }
 SIZE_VALUE_IDS = {"S": 32835890, "M": 32835539, "L": 32835431,
                   "XL": 32835748, "XS": 32835944}
-OFORM_ACQUABOX = 44624283  # «аквабокс» — всегда в комплекте у REN
-BUQUET_TYPE_IDS = {"mono": 34064842, "author": 34070791}  # монобукет / сборный букет
+OFORM_IDS = {"Пленка": 44624290, "Под ленту": 44624261,
+             "Корзина": 44624275, "Коробка": 44624259}  # Оформление (37920070)
+# Тип товара (21194330) по смыслу
+TYPE_IDS = {"mono": (34064842, "монобукет"), "author": (34070791, "сборный букет"),
+            "box": (34069690, "композиция в коробке"),
+            "basket": (34066674, "композиция в корзине"),
+            "vase": (34063873, "композиция в вазе")}
 BOUQUET_WIDTH_CM = 25  # ширина букета по регламенту владельца
 
 # Кому (27078630) — отмечаем ВСЕ значения справочника
@@ -206,17 +211,18 @@ class YandexMarketClient:
         total_flowers: int,
         height_cm: int,
         size_label: str = "",
-        weight_kg: float = 0.9,
+        weight_kg: float = 1.0,
         diameter_cm: int = 30,
         height_pack_cm: int = 45,
         okpd2: str = "01.19.21.190",
         tnved: str = "0603197000",
-        packaging_film: bool = False,
+        packaging: str = "Пленка",
         color_value_id: Optional[int] = None,
         bouquet_type: str = "author",
         flower_names: Optional[List[str]] = None,
         filter_color_id: Optional[int] = None,
-        video_url: Optional[str] = None
+        video_url: Optional[str] = None,
+        width_cm: int = 25
     ) -> Dict[str, Any]:
         """Полноценная карточка товара в каталоге кабинета. Только НОВЫЕ offerId.
 
@@ -252,13 +258,10 @@ class YandexMarketClient:
         for vid, vname in ALL_OCCASIONS:
             parameter_values.append(
                 {"parameterId": PARAMS["Повод"], "valueId": vid, "value": vname})
-        # Оформление: плёнка или под ленту (по факту упаковки из состава МойСклада)
-        if packaging_film:
-            parameter_values.append(
-                {"parameterId": PARAMS["Оформление"], "valueId": 44624290, "value": "пленка"})
-        else:
-            parameter_values.append(
-                {"parameterId": PARAMS["Оформление"], "valueId": 44624261, "value": "под ленту"})
+        # Оформление: плёнка / под ленту / корзина / коробка (аквабокс НЕ указываем)
+        oform = OFORM_IDS.get(packaging, OFORM_IDS["Пленка"])
+        parameter_values.append(
+            {"parameterId": PARAMS["Оформление"], "valueId": oform, "value": packaging.lower()})
         size_id = SIZE_VALUE_IDS.get(str(size_label).upper())
         if size_id:
             parameter_values.append(
@@ -271,11 +274,10 @@ class YandexMarketClient:
             parameter_values.append(
                 {"parameterId": PARAMS["Цвет товара для фильтра"], "valueId": filter_color_id,
                  "value": _filter_color_name(filter_color_id)})
-        # Тип: монобукет или сборный букет
-        type_id = BUQUET_TYPE_IDS.get(bouquet_type, BUQUET_TYPE_IDS["author"])
+        # Тип: монобукет / сборный букет / композиция в коробке / в корзине / в вазе
+        type_id, type_name = TYPE_IDS.get(bouquet_type, TYPE_IDS["author"])
         parameter_values.append(
-            {"parameterId": PARAMS["Тип"], "valueId": type_id,
-             "value": "монобукет" if bouquet_type == "mono" else "сборный букет"})
+            {"parameterId": PARAMS["Тип"], "valueId": type_id, "value": type_name})
         # Вид цветов (multivalue) — автоопределение по составу с морфологией
         for vid, canonical in match_flower_kinds(flower_names):
             parameter_values.append(
@@ -292,8 +294,6 @@ class YandexMarketClient:
                     added_green.add(vid)
                     break
 
-        from rules_sheet import get as rule_get
-        bouquet_width = int(rule_get("market", "ширина_букета_см", "25") or 25)
         offer = {
             "offerId": offer_id,
             "name": name[:256],
@@ -302,8 +302,9 @@ class YandexMarketClient:
             "vendor": "REN",
             "description": description[:6000],
             "basicPrice": {"value": int(round(float(price))), "currencyId": "RUR"},
-            # Габариты по регламенту владельца: ширина букета из «Правил», длина = высота = стебли
-            "weightDimensions": {"length": height_cm, "width": bouquet_width,
+            # Габариты: ширина из карточки (25 по умолчанию, для корзин — от флориста),
+            # длина = высота = стебли
+            "weightDimensions": {"length": height_cm, "width": width_cm,
                                  "height": height_cm, "weight": weight_kg},
             "boxCount": 1,
             # ОКПД2 и срок годности НЕ передаём (решение владельца)

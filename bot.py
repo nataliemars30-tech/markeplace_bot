@@ -362,11 +362,20 @@ async def _sync_prepare(message: types.Message, state: FSMContext, arg: str, col
 
     # Имя букета: из локальной базы, иначе из названия Flowwow («...«Имя»...»)
     record = get_product_by_article(article)
-    bouquet_name = record["name"] if record else (item.get("name") or article)
-    if not record:
-        m_name = re.search(r"«([^»]+)»", item.get("name") or "")
-        if m_name:
-            bouquet_name = m_name.group(1)
+    fw_name = item.get("name") or article
+    m_name = re.search(r"«([^»]+)»", fw_name)
+    fw_quoted = bool(m_name)
+    if record:
+        bouquet_name = record["name"]
+    elif m_name:
+        bouquet_name = m_name.group(1)
+    else:
+        # старое название без кавычек — чистим от слова-категории (корзина/бокс),
+        # чтобы не дублировалось в названии
+        bouquet_name = fw_name.strip().strip('"')
+        for noun_word in ("корзина", "корзины", "бокс", "бокса", "композиция"):
+            bouquet_name = re.sub(rf"\b{noun_word}\b", "", bouquet_name, flags=re.I).strip()
+        bouquet_name = re.sub(r"\s{2,}", " ", bouquet_name).strip(" ,-") or fw_name[:60]
     tilda_cats_raw = (record.get("tilda_category") or "") if record else ""
     tilda_cats = [c.strip() for c in tilda_cats_raw.split(";") if c.strip()] or ["Нежные"]
 
@@ -374,8 +383,10 @@ async def _sync_prepare(message: types.Message, state: FSMContext, arg: str, col
         "article": article, "color": color, "base": base, "photos": photos,
         "label": label, "dpos": dpos, "bouquet_name": bouquet_name,
         "tilda_cats": tilda_cats,
-        "fw_name": item.get("name", article), "fw_price": item.get("price"),
+        "fw_name": fw_name, "fw_price": item.get("price"),
         "fw_desc": item.get("description") or "",
+        "fw_subcat": item.get("subCategoryId") or 2,
+        "fw_quoted": fw_quoted,
         "selected": list(SYNC_PLATFORMS),
     })
     await state.set_state(SyncFSM.choosing)
@@ -422,10 +433,11 @@ async def sync_choose(callback: types.CallbackQuery, state: FSMContext):
         await state.update_data(sync=data)
         await state.set_state(SyncFSM.waiting_size)
         await callback.message.edit_text(
-            "📏 <b>Размер букета</b>\n\n"
+            "📏 <b>Размер товара</b>\n\n"
             "Напишите высоту в см и размер одним сообщением, например:\n"
-            "<code>45 M</code> или <code>50 L</code>\n\n"
-            "(высота = длина стеблей, размер: S / M / L)",
+            "<code>45 M</code> — букет высотой 45 см, размер M\n"
+            "<code>50 L 40</code> — корзина: высота 50 см, размер L, ширина 40 см\n\n"
+            "(ширину указывайте только для корзин/боксов; букеты — всегда 25)",
             parse_mode="HTML")
         await callback.answer()
         return
@@ -436,20 +448,25 @@ async def sync_size_entered(message: types.Message, state: FSMContext):
     data = (await state.get_data()).get("sync") or {}
     tokens = (message.text or "").split()
     height = None
+    width = None
     label = (data.get("label") or "M").upper()
     for t in tokens:
-        if t.isdigit() and height is None:
-            height = int(t)
+        if t.isdigit():
+            if height is None:
+                height = int(t)
+            elif width is None:
+                width = int(t)
         elif t.upper() in ("S", "M", "L", "XS", "XL"):
             label = t.upper()
     if not height or not (15 <= height <= 150):
-        await message.reply("Не поняла. Напишите так: <code>45 M</code> (высота в см и размер)",
+        await message.reply("Не поняла. Напишите так: <code>45 M</code> или <code>50 L 40</code>",
                             parse_mode="HTML")
         return
     selected = set(data.get("selected") or [])
-    data.update({"height_cm": height, "label": label})
+    data.update({"height_cm": height, "label": label, "width_cm": width or 25})
     await state.clear()
-    status = await message.answer(f"⏳ Копирую {data['article']} → {', '.join(sorted(selected))}…")
+    size_note = f"{height} см, {label}" + (f", ширина {width}" if width else "")
+    status = await message.answer(f"⏳ Копирую {data['article']} ({size_note}) → {', '.join(sorted(selected))}…")
     asyncio.create_task(_run_sync(status, data, selected))
 
 
@@ -467,13 +484,29 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
     label = data["label"]
     weight_g = 1000  # вес для Маркета всегда 1 кг (правило владельца)
     is_mono = len({p["name"].split()[0].lower() for p in dpos}) == 1
-    # Оформление: определяем по названию/описанию (аквабокс НИКОМУ не указываем)
-    fw_text = ((data.get("fw_name") or "") + " " + (data.get("fw_desc") or "")).lower()
-    pack_words = ("упаковк", "пленк", "плёнк", "тишью", "фоамиран", "корейк")
-    packaging_label = "Пленка" if any(w in fw_text for w in pack_words) else "Под ленту"
+    # Существительное и тип товара — по подкатегории Flowwow
+    subcat = int(data.get("fw_subcat") or 2)
+    NOUN_BY_SUBCAT = {1: "Букет", 2: "Букет", 3: "Коробка", 4: "Корзина", 5: "Композиция", 7: "Декор"}
+    TYPE_BY_SUBCAT = {1: "mono", 2: "author", 3: "box", 4: "basket", 5: "vase"}
+    noun = NOUN_BY_SUBCAT.get(subcat, "Букет")
+    market_type = TYPE_BY_SUBCAT.get(subcat, "author")
+    if subcat == 1 and not is_mono:
+        market_type = "author"
 
+    # Оформление: корзина/коробка — по подкатегории; иначе по тексту (плёнка/лента)
+    fw_text = ((data.get("fw_name") or "") + " " + (data.get("fw_desc") or "")).lower()
+    if subcat == 4:
+        packaging_label = "Корзина"
+    elif subcat == 3:
+        packaging_label = "Коробка"
+    else:
+        pack_words = ("упаковк", "пленк", "плёнк", "тишью", "фоамиран", "корейк")
+        packaging_label = "Пленка" if any(w in fw_text for w in pack_words) else "Под ленту"
+
+    width_cm = int(data.get("width_cm") or 25)
     composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
-    fw_title = build_marketplace_title(bouquet_name, color, dpos)
+    fw_title = build_marketplace_title(bouquet_name, color, dpos, noun=noun,
+                                       quoted=bool(data.get("fw_quoted")))
     eda_desc = (f"Букет от цветочной студии REN, Санкт-Петербург. "
                 f"Состав: {composition_text}. Аквабокс и кризал в комплекте.")
 
@@ -493,14 +526,15 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
                 height_cm=height_cm,
                 size_label=label,
                 weight_kg=1.0,
-                diameter_cm=25,
+                diameter_cm=width_cm,
                 height_pack_cm=max(height_cm + 10, 40),
                 okpd2="01.19.21.190", tnved="0603197000",
-                packaging_film=True,
+                packaging=packaging_label,
                 color_value_id=market_color_value_id(color),
-                bouquet_type="mono" if is_mono else "author",
+                bouquet_type=market_type,
                 flower_names=[p["name"] for p in dpos],
                 filter_color_id=market_filter_color_id(color),
+                width_cm=width_cm,
             )
             results.append(f"✅ Маркет: карточка отправлена ({prices['yandex_market']}₽)")
         except YandexMarketError as e:
@@ -509,7 +543,7 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
     if "Еда" in selected:
         try:
             eda_row = build_eda_row(name=bouquet_name, variation_label=label,
-                                    is_mono=is_mono, price_eda=prices["yandex_eda"],
+                                    is_mono=(is_mono and noun == "Букет"), price_eda=prices["yandex_eda"],
                                     positions=dpos, picture_urls=photos, description=eda_desc)
             if eda_csv.append_product(eda_row):
                 results.append(f"✅ Еда: в CSV ({prices['yandex_eda']}₽)")
@@ -1037,12 +1071,13 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 height_pack_cm=max(var_height + 10, 40),
                 okpd2=okpd2_info.get("code", "01.19.21.190"),
                 tnved=okpd2_info.get("tnved", "0603197000"),
-                packaging_film=has_packaging,
+                packaging=packaging_label,
                 color_value_id=color_vid,
                 bouquet_type="mono" if is_mono else "author",
                 flower_names=flower_names,
                 filter_color_id=filter_color_vid,
-                video_url=video_public_url
+                video_url=video_public_url,
+                width_cm=25
             )
             market_status = "карточка отправлена (обработка)"
         except YandexMarketError as e:

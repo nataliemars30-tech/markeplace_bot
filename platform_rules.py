@@ -322,11 +322,33 @@ def _instrumental(flower_name: str) -> str:
     return " ".join(words[:i]) .lower() + (" " if i > 0 else "") + " ".join(words[i:])
 
 
+def _cut_at_word(text: str, limit: int) -> str:
+    """Обрезка до лимита по границе слова (не на полуслове)."""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip(" ,—(")
+
+
 def build_marketplace_title(bouquet_name: str, color_or_season: str,
-                            dpos: List[Dict[str, Any]], limit: int = 100) -> str:
-    """Формула ТЗ: Букет [настроение] «[Имя]» с [Цветок 1], [Цветок 2], [Цветок 3].
-    3-5 основных цветов без зелени и упаковки, лимит 100 символов, без размера."""
+                            dpos: List[Dict[str, Any]], limit: int = 100,
+                            noun: str = "Букет", quoted: bool = True) -> str:
+    """Формула ТЗ: [Существительное] [настроение] «[Имя]» с [цветы].
+    noun: Букет/Корзина/Коробка/Композиция (по подкатегории Flowwow).
+    Если название уже содержит цветы — список не дублируем. Обрезка по границе слова."""
     adj = COLOR_ADJECTIVES.get(color_or_season, "авторский")
+    name = str(bouquet_name).strip()
+    name_low = name.lower()
+    if quoted:
+        base = f"{noun} {adj} «{name}»"
+    else:
+        base = f"{noun} {name}"  # старые названия — без прилагательного
+    # если в названии уже есть цветы — не дублируем перечень
+    flower_stems = ("роз", "тюльп", "пион", "гвозд", "хриз", "гортенз", "эустом",
+                    "диант", "гербер", "альстр", "маттиол", "гипсоф", "ирис", "калла",
+                    "фрез", "лили", "орхид", "георгин", "проте", "анемон", "ранункул",
+                    "астр", "нарцисс", "гладиол", "сирен", "мимоз", "лаванд", "амарилл")
+    if any(st in name_low for st in flower_stems):
+        return _cut_at_word(base, limit)
     flowers: List[str] = []
     for p in dpos or []:
         n = str(p.get("name", "")).lower()
@@ -334,9 +356,8 @@ def build_marketplace_title(bouquet_name: str, color_or_season: str,
             continue
         if n not in flowers:
             flowers.append(n)
-    base = f"Букет {adj} «{bouquet_name}»"
     if not flowers:
-        return base[:limit]
+        return _cut_at_word(base, limit)
     title, added = base, []
     for fl in flowers[:5]:
         cand = f"{title}{', ' if added else ' с '}{_instrumental(fl)}"
@@ -345,8 +366,8 @@ def build_marketplace_title(bouquet_name: str, color_or_season: str,
             added.append(fl)
         else:
             break
-    if not added:  # даже один цветок не влез — жёсткая обрезка
-        title = f"{base} с {_instrumental(flowers[0])}"[:limit].rstrip(" ,")
+    if not added:  # даже один цветок не влез — жёсткая обрезка по слову
+        title = _cut_at_word(f"{base} с {_instrumental(flowers[0])}", limit)
     return title.strip().rstrip(",")
 
 
