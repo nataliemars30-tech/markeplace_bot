@@ -251,19 +251,41 @@ def _sync_keyboard(selected: set) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-@dp.message(Command("sync"))
+@dp.message(F.text == "🔄 Копия с Flowwow")
+async def menu_sync_start(message: types.Message, state: FSMContext):
+    """Кнопка меню: копирование товара с Flowwow на другие площадки."""
+    await state.set_state(SyncFSM.waiting_number)
+    await message.answer(
+        "🔄 <b>Копия товара с Flowwow</b>\n\n"
+        "Пришлите номер товара из списка /fwlist (например: <code>77123456</code>)\n"
+        "или артикул, если товар создавался через бота (например: <code>REN-012-M</code>)\n\n"
+        "Можно сразу с цветом: <code>77123456 Кремовый</code>",
+        parse_mode="HTML", reply_markup=get_main_reply_keyboard())
+
+
+@dp.message(SyncFSM.waiting_number, F.text)
+async def sync_number_entered(message: types.Message, state: FSMContext):
+    parts = (message.text or "").split(maxsplit=1)
+    await _sync_prepare(message, state, parts[0], parts[1] if len(parts) > 1 else "Разноцветный")
+
+
+@dp.message(Command("копия", "sync"))
 async def cmd_sync(message: types.Message, state: FSMContext):
     """Копирование существующего товара Flowwow на ВЫБРАННЫЕ площадки.
-    Формат: /sync REN-011-M [цвет]  — для товаров бота (по артикулу)
-            /sync 12345678 [цвет]   — для старых товаров Flowwow (число из ссылки на товар)"""
+    Формат: /копия REN-011-M [цвет]  — для товаров бота (по артикулу)
+            /копия 12345678 [цвет]   — для старых товаров Flowwow (число из /fwlist)"""
     parts = (message.text or "").split(maxsplit=2)
     if len(parts) < 2:
-        await message.reply("Формат:\n/sync REN-011-M [цвет] — товар создан ботом\n"
-                            "/sync 12345678 [цвет] — старый товар Flowwow (число из ссылки)\n"
+        await message.reply("Формат:\n/копия REN-011-M [цвет] — товар создан ботом\n"
+                            "/копия 12345678 [цвет] — старый товар Flowwow (число из /fwlist)\n"
                             "/fwlist — список товаров Flowwow с номерами")
         return
-    arg = parts[1].strip()
-    color = parts[2].strip() if len(parts) > 2 else "Разноцветный"
+    await _sync_prepare(message, state, parts[1].strip(),
+                        parts[2].strip() if len(parts) > 2 else "Разноцветный")
+
+
+async def _sync_prepare(message: types.Message, state: FSMContext, arg: str, color: str) -> None:
+    arg = arg.strip()
     status = await message.answer(f"⏳ Ищу товар на Flowwow…")
 
     product_id = None
@@ -273,10 +295,11 @@ async def cmd_sync(message: types.Message, state: FSMContext):
     elif re.fullmatch(r"REN(-[A-Z])?-\d{3}(-[A-Z0-9]+)?", arg.upper()):
         item = await fw_client.get_product(offer_id=arg.upper())
     else:
-        await status.edit_text("❌ Не поняла. Артикул вида REN-011-М или число — productId из ссылки на товар Flowwow.\n"
-                               "Список товаров: /fwlist")
+        await state.clear()
+        await status.edit_text("❌ Не поняла. Нужен номер товара из /fwlist или артикул REN-011-М.")
         return
     if not item:
+        await state.clear()
         await status.edit_text(f"❌ Товар не найден на Flowwow. Проверьте номер (/fwlist покажет список).")
         return
 
@@ -286,10 +309,12 @@ async def cmd_sync(message: types.Message, state: FSMContext):
     except (TypeError, ValueError):
         base = 0
     if base <= 0:
+        await state.clear()
         await status.edit_text(f"❌ Не смог вычислить базовую цену из цены Flowwow ({item.get('price')}).")
         return
     photos = [u for u in (item.get("images") or []) if u][:6]
     if not photos:
+        await state.clear()
         await status.edit_text("❌ У товара на Flowwow нет фото — нечего копировать.")
         return
 
@@ -328,15 +353,10 @@ async def cmd_sync(message: types.Message, state: FSMContext):
             bouquet_name = m_name.group(1)
     tilda_cats = [c.strip() for c in (record["tilda_category"] or "").split(";") if c.strip()] or ["Нежные"]
 
-    height_cm = 45
-    m_h = re.search(r"(\d{2,3})\s*см", item.get("description") or "")
-    if m_h:
-        height_cm = int(m_h.group(1))
-
     await state.update_data(sync={
         "article": article, "color": color, "base": base, "photos": photos,
         "label": label, "dpos": dpos, "bouquet_name": bouquet_name,
-        "tilda_cats": tilda_cats, "height_cm": height_cm,
+        "tilda_cats": tilda_cats,
         "fw_name": item.get("name", article), "fw_price": item.get("price"),
         "selected": list(SYNC_PLATFORMS),
     })
@@ -346,7 +366,7 @@ async def cmd_sync(message: types.Message, state: FSMContext):
         f"🔄 <b>{article}</b> — что копируем с Flowwow:\n\n"
         f"«{esc(item.get('name', article))}» · {item.get('price')}₽ → база {base}₽\n"
         f"Состав: {esc(composition_text)}\n"
-        f"Фото: {len(photos)} шт · высота ≈ {height_cm} см · цвет: {esc(color)}\n\n"
+        f"Фото: {len(photos)} шт · цвет: {esc(color)}\n\n"
         f"Снимите галочки с площадок, где товар УЖЕ есть:",
         reply_markup=_sync_keyboard(set(SYNC_PLATFORMS)),
         parse_mode="HTML"
@@ -380,9 +400,39 @@ async def sync_choose(callback: types.CallbackQuery, state: FSMContext):
         if not selected:
             await callback.answer("Выберите хотя бы одну площадку", show_alert=True)
             return
-        await callback.answer("⏳ Копирую…")
-        await state.clear()
-        asyncio.create_task(_run_sync(callback.message, data, selected))
+        data["selected"] = list(selected)
+        await state.update_data(sync=data)
+        await state.set_state(SyncFSM.waiting_size)
+        await callback.message.edit_text(
+            "📏 <b>Размер букета</b>\n\n"
+            "Напишите высоту в см и размер одним сообщением, например:\n"
+            "<code>45 M</code> или <code>50 L</code>\n\n"
+            "(высота = длина стеблей, размер: S / M / L)",
+            parse_mode="HTML")
+        await callback.answer()
+        return
+
+
+@dp.message(SyncFSM.waiting_size, F.text)
+async def sync_size_entered(message: types.Message, state: FSMContext):
+    data = (await state.get_data()).get("sync") or {}
+    tokens = (message.text or "").split()
+    height = None
+    label = (data.get("label") or "M").upper()
+    for t in tokens:
+        if t.isdigit() and height is None:
+            height = int(t)
+        elif t.upper() in ("S", "M", "L", "XS", "XL"):
+            label = t.upper()
+    if not height or not (15 <= height <= 150):
+        await message.reply("Не поняла. Напишите так: <code>45 M</code> (высота в см и размер)",
+                            parse_mode="HTML")
+        return
+    selected = set(data.get("selected") or [])
+    data.update({"height_cm": height, "label": label})
+    await state.clear()
+    status = await message.answer(f"⏳ Копирую {data['article']} → {', '.join(sorted(selected))}…")
+    asyncio.create_task(_run_sync(status, data, selected))
 
 
 async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> None:

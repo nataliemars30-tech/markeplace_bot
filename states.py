@@ -17,4 +17,6 @@ class HideFSM(StatesGroup):
 
 
 class SyncFSM(StatesGroup):
+    waiting_number = State()     # Ожидание номера/артикула (после кнопки меню)
     choosing = State()           # Выбор площадок для копирования (кнопки)
+    waiting_size = State()       # Ожидание высоты и размера от флориста

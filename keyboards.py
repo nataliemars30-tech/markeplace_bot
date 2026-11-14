@@ -18,6 +18,7 @@ def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
              KeyboardButton(text="💍 Свадебное")],
             [KeyboardButton(text="🕯 Декор и свечи"),
              KeyboardButton(text="🛍 Доп. товары")],
+            [KeyboardButton(text="🔄 Копия с Flowwow")],
             [KeyboardButton(text="🔒 Скрыть букет со всех витрин")]
         ],
         resize_keyboard=True,
