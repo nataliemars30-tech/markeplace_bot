@@ -38,7 +38,8 @@ class FlowwowClient:
         description: str = "",
         production_time: int = 5,
         width_cm: int = 30,
-        height_cm: int = 40
+        height_cm: int = 40,
+        color: str = ""
     ) -> Dict[str, Any]:
         """
         Создание товара на Flowwow.
@@ -74,8 +75,21 @@ class FlowwowClient:
             # Производитель — обязательное поле карточки (правило владельца, лист «Правила»)
             "manufacturerName": rule_get("flowwow", "производитель_название", "REN, Россия"),
             "manufacturerAddress": rule_get("flowwow", "производитель_адрес", "Россия, Санкт-Петербург"),
+            "manufacturerCountry": 1,  # Россия (справочник subCategoryProperties)
             "consist": consist or [{"name": name, "quantity": 1, "measure": 1}]
         }
+        # Цвет товара (справочник Flowwow) — из гаммы букета
+        fw_color_map = {
+            "белый": 10, "кремовый": 14, "розовый": 2, "красный": 1,
+            "сиреневый": 15, "жёлтый": 4, "желтый": 4, "зеленый": 5,
+            "темный": 9, "разноцветный": 11, "оранжевый": 3,
+        }
+        if color:
+            low = str(color).lower()
+            for word, cid in fw_color_map.items():
+                if word in low:
+                    item["color"] = cid
+                    break
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:

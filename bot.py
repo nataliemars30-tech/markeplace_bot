@@ -990,7 +990,8 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 description=await generate_description(name, color, composition_text, packaging_label, "flowwow"),
                 production_time=5,
                 width_cm=width_cm,
-                height_cm=var_height
+                height_cm=var_height,
+                color=color
             )
             fw_id = res.get("id", "ok")
         except FlowwowAPIError as e:
