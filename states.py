@@ -14,3 +14,7 @@ class ProductCreationFSM(StatesGroup):
 
 class HideFSM(StatesGroup):
     waiting_article = State()    # Ожидание артикула для скрытия со всех витрин
+
+
+class SyncFSM(StatesGroup):
+    choosing = State()           # Выбор площадок для копирования (кнопки)

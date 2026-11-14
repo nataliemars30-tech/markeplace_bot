@@ -36,7 +36,7 @@ from media_processor import mute_video_async, compress_video_async
 from market_api import YandexMarketClient, YandexMarketError
 from eda_csv import EdaCsvManager, build_eda_row
 from tilda_mcp import TildaCatalog
-from states import ProductCreationFSM, HideFSM
+from states import ProductCreationFSM, HideFSM, SyncFSM
 from keyboards import get_main_reply_keyboard
 import handlers_menu
 
@@ -238,14 +238,27 @@ async def reviews_poller():
         await asyncio.sleep(REVIEWS_POLL_SECONDS)
 
 
+SYNC_PLATFORMS = ("Маркет", "Еда", "Tilda")
+
+
+def _sync_keyboard(selected: set) -> InlineKeyboardMarkup:
+    rows = []
+    for p in SYNC_PLATFORMS:
+        mark = "✅" if p in selected else "⬜"
+        rows.append([InlineKeyboardButton(text=f"{mark} {p}", callback_data=f"sync:tg:{p}")])
+    rows.append([InlineKeyboardButton(text="🚀 Копировать", callback_data="sync:go"),
+                 InlineKeyboardButton(text="Отмена", callback_data="sync:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 @dp.message(Command("sync"))
-async def cmd_sync(message: types.Message):
-    """Копирование существующего товара Flowwow на остальные площадки.
-    Формат: /sync REN-011-M [цвет/гамма]  (цвет опционально, по умолчанию Разноцветный)"""
+async def cmd_sync(message: types.Message, state: FSMContext):
+    """Копирование существующего товара Flowwow на ВЫБРАННЫЕ площадки.
+    Формат: /sync REN-011-M [цвет/гамма]"""
     parts = (message.text or "").split(maxsplit=2)
     if len(parts) < 2 or not re.fullmatch(r"REN(-[A-Z])?-\d{3}(-[A-Z0-9]+)?", parts[1].strip().upper()):
         await message.reply("Формат: /sync REN-011-M [цвет]\n"
-                            "Копирует товар, который есть на Flowwow, на Маркет, Еду и Tilda.")
+                            "Копирует товар, который есть на Flowwow, на выбранные площадки.")
         return
     article = parts[1].strip().upper()
     color = parts[2].strip() if len(parts) > 2 else "Разноцветный"
@@ -264,7 +277,6 @@ async def cmd_sync(message: types.Message):
     if base <= 0:
         await status.edit_text(f"❌ Не смог вычислить базовую цену из цены Flowwow ({item.get('price')}).")
         return
-    prices = calculate_platform_prices(base)
     photos = [u for u in (item.get("images") or []) if u][:6]
     if not photos:
         await status.edit_text("❌ У товара на Flowwow нет фото — нечего копировать.")
@@ -299,83 +311,154 @@ async def cmd_sync(message: types.Message):
             bouquet_name = m_name.group(1)
     tilda_cats = [c.strip() for c in (record["tilda_category"] or "").split(";") if c.strip()] or ["Нежные"]
 
-    composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
-    fw_title = build_marketplace_title(bouquet_name, color, dpos)
     height_cm = 45
     m_h = re.search(r"(\d{2,3})\s*см", item.get("description") or "")
     if m_h:
         height_cm = int(m_h.group(1))
+
+    await state.update_data(sync={
+        "article": article, "color": color, "base": base, "photos": photos,
+        "label": label, "dpos": dpos, "bouquet_name": bouquet_name,
+        "tilda_cats": tilda_cats, "height_cm": height_cm,
+        "fw_name": item.get("name", article), "fw_price": item.get("price"),
+        "selected": list(SYNC_PLATFORMS),
+    })
+    await state.set_state(SyncFSM.choosing)
+    composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
+    await status.edit_text(
+        f"🔄 <b>{article}</b> — что копируем с Flowwow:\n\n"
+        f"«{esc(item.get('name', article))}» · {item.get('price')}₽ → база {base}₽\n"
+        f"Состав: {esc(composition_text)}\n"
+        f"Фото: {len(photos)} шт · высота ≈ {height_cm} см · цвет: {esc(color)}\n\n"
+        f"Снимите галочки с площадок, где товар УЖЕ есть:",
+        reply_markup=_sync_keyboard(set(SYNC_PLATFORMS)),
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data.startswith("sync:"), SyncFSM.choosing)
+async def sync_choose(callback: types.CallbackQuery, state: FSMContext):
+    _, action, *rest = callback.data.split(":")
+    data = (await state.get_data()).get("sync") or {}
+    selected = set(data.get("selected") or [])
+
+    if action == "cancel":
+        await state.clear()
+        await callback.message.edit_text("❌ Копирование отменено.")
+        await callback.answer()
+        return
+    if action == "tg":
+        platform = rest[0]
+        if platform in selected:
+            selected.discard(platform)
+        else:
+            selected.add(platform)
+        data["selected"] = list(selected)
+        await state.update_data(sync=data)
+        await callback.message.edit_reply_markup(reply_markup=_sync_keyboard(selected))
+        await callback.answer()
+        return
+
+    if action == "go":
+        if not selected:
+            await callback.answer("Выберите хотя бы одну площадку", show_alert=True)
+            return
+        await callback.answer("⏳ Копирую…")
+        await state.clear()
+        asyncio.create_task(_run_sync(callback.message, data, selected))
+
+
+async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> None:
+    article = data["article"]
+    color = data["color"]
+    base = data["base"]
+    prices = calculate_platform_prices(base)
+    photos = data["photos"]
+    label = data["label"]
+    dpos = data["dpos"]
+    bouquet_name = data["bouquet_name"]
+    tilda_cats = data["tilda_cats"]
+    height_cm = data["height_cm"]
     weight_g = {"S": 600, "M": 900, "L": 1400}.get(str(label).upper(), 900)
     is_mono = len({p["name"].split()[0].lower() for p in dpos}) == 1
-    packaging_label = "Пленка" if ("пленк" in (item.get("description") or "").lower()
-                                   or "упаков" in (item.get("description") or "").lower()) else "Под ленту"
-    desc = await generate_description(bouquet_name, color, composition_text, packaging_label, "market")
+    packaging_label = "Пленка"  # на Flowwow у REN букеты в упаковке по умолчанию
 
-    results = [f"Источник: Flowwow «{esc(item.get('name', article))}», цена {item.get('price')}₽ → база {base}₽"]
+    composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
+    fw_title = build_marketplace_title(bouquet_name, color, dpos)
+    eda_desc = (f"Букет от цветочной студии REN, Санкт-Петербург. "
+                f"Состав: {composition_text}. Аквабокс и кризал в комплекте.")
 
-    # --- Маркет ---
+    results = [f"Источник: Flowwow «{esc(data['fw_name'])}», {data['fw_price']}₽ → база {base}₽"]
+
+    if "Маркет" in selected:
+        try:
+            desc = await generate_description(bouquet_name, color, composition_text, packaging_label, "market")
+            await market_client.create_card(
+                offer_id=article,
+                name=fw_title,
+                price=prices["yandex_market"],
+                pictures=photos,
+                description=desc,
+                composition=composition_text,
+                total_flowers=count_stems(dpos),
+                height_cm=height_cm,
+                size_label="" if is_mono else label,
+                weight_kg=round(weight_g / 1000, 2),
+                diameter_cm=25,
+                height_pack_cm=max(height_cm + 10, 40),
+                okpd2="01.19.21.190", tnved="0603197000",
+                packaging_film=True,
+                color_value_id=market_color_value_id(color),
+                bouquet_type="mono" if is_mono else "author",
+                flower_names=[p["name"] for p in dpos],
+                filter_color_id=market_filter_color_id(color),
+            )
+            results.append(f"✅ Маркет: карточка отправлена ({prices['yandex_market']}₽)")
+        except YandexMarketError as e:
+            results.append(f"⚠️ Маркет: {esc(str(e))[:120]}")
+
+    if "Еда" in selected:
+        try:
+            eda_row = build_eda_row(name=bouquet_name, variation_label=label,
+                                    is_mono=is_mono, price_eda=prices["yandex_eda"],
+                                    positions=dpos, picture_urls=photos, description=eda_desc)
+            if eda_csv.append_product(eda_row):
+                results.append(f"✅ Еда: в CSV ({prices['yandex_eda']}₽)")
+            else:
+                results.append("⚠️ Еда: ошибка записи CSV")
+        except Exception as e:
+            results.append(f"⚠️ Еда: {esc(str(e))[:120]}")
+
+    if "Tilda" in selected:
+        try:
+            tilda_seo = generate_tilda_seo_and_text(bouquet_name, dpos)
+            tilda_status = await tilda_catalog.create_product(
+                project_id=config.tilda_project_id,
+                title=f"{bouquet_name} {label}",
+                price_tilda=prices["tilda"],
+                photo_urls=photos,
+                tilda_categories=tilda_cats,
+                description=eda_desc,
+                full_article=article,
+                photo_alts=[tilda_seo.get(f"alt_{i}", "") for i in range(1, 7)],
+                seo_title=tilda_seo.get("title", ""),
+                seo_descr=tilda_seo.get("description", ""),
+                seo_keywords=tilda_seo.get("keywords", ""),
+                height_cm=height_cm,
+                weight_g=weight_g,
+            )
+            mark = "✅" if "проверен" in tilda_status else "⚠️"
+            results.append(f"{mark} Tilda: {esc(tilda_status.splitlines()[0])}")
+            if tilda_catalog.last_report:
+                results.append("\n".join(tilda_catalog.last_report.splitlines()[1:]))
+        except Exception as e:
+            results.append(f"⚠️ Tilda: {esc(str(e))[:120]}")
+
     try:
-        await market_client.create_card(
-            offer_id=article,
-            name=fw_title,
-            price=prices["yandex_market"],
-            pictures=photos,
-            description=desc,
-            composition=composition_text,
-            total_flowers=count_stems(dpos),
-            height_cm=height_cm,
-            size_label="" if is_mono else label,
-            weight_kg=round(weight_g / 1000, 2),
-            diameter_cm=25,
-            height_pack_cm=max(height_cm + 10, 40),
-            okpd2="01.19.21.190", tnved="0603197000",
-            packaging_film=(packaging_label == "Пленка"),
-            color_value_id=market_color_value_id(color),
-            bouquet_type="mono" if is_mono else "author",
-            flower_names=[p["name"] for p in dpos],
-            filter_color_id=market_filter_color_id(color),
-        )
-        results.append(f"✅ Маркет: карточка отправлена ({prices['yandex_market']}₽)")
-    except YandexMarketError as e:
-        results.append(f"⚠️ Маркет: {esc(str(e))[:120]}")
-
-    # --- Еда ---
-    try:
-        eda_desc = (f"Букет от цветочной студии REN, Санкт-Петербург. "
-                    f"Состав: {composition_text}. Аквабокс и кризал в комплекте.")
-        eda_row = build_eda_row(name=bouquet_name, variation_label=label,
-                                is_mono=is_mono, price_eda=prices["yandex_eda"],
-                                positions=dpos, picture_urls=photos, description=eda_desc)
-        if eda_csv.append_product(eda_row):
-            results.append(f"✅ Еда: в CSV ({prices['yandex_eda']}₽)")
-        else:
-            results.append("⚠️ Еда: ошибка записи CSV")
-    except Exception as e:
-        results.append(f"⚠️ Еда: {esc(str(e))[:120]}")
-
-    # --- Tilda ---
-    tilda_seo = generate_tilda_seo_and_text(bouquet_name, dpos)
-    tilda_status = await tilda_catalog.create_product(
-        project_id=config.tilda_project_id,
-        title=f"{bouquet_name} {label}",
-        price_tilda=prices["tilda"],
-        photo_urls=photos,
-        tilda_categories=tilda_cats,
-        description=eda_desc,
-        full_article=article,
-        photo_alts=[tilda_seo.get(f"alt_{i}", "") for i in range(1, 7)],
-        seo_title=tilda_seo.get("title", ""),
-        seo_descr=tilda_seo.get("description", ""),
-        seo_keywords=tilda_seo.get("keywords", ""),
-        height_cm=height_cm,
-        weight_g=weight_g,
-    )
-    results.append(f"{'✅' if 'проверен' in tilda_status else '⚠️'} Tilda: {esc(tilda_status.splitlines()[0])}")
-    if tilda_catalog.last_report:
-        results.append("\n".join(tilda_catalog.last_report.splitlines()[1:]))
-
-    await status.edit_text(f"🔄 <b>{article}</b> → остальные площадки\n" + "\n".join(results),
-                           parse_mode="HTML")
+        await status_msg.edit_text(f"🔄 <b>{article}</b> → {', '.join(sorted(selected))}\n" +
+                                   "\n".join(results), parse_mode="HTML")
+    except Exception:
+        await status_msg.answer(f"🔄 <b>{article}</b>\n" + "\n".join(results), parse_mode="HTML")
 
 
 @dp.message(Command("reload"))
