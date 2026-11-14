@@ -54,19 +54,42 @@ HEADERS_27 = [
 SIZE_DIMS = {"S": (25, 35, 600), "M": (35, 45, 900), "L": (45, 55, 1400)}
 
 
+def _plural_gen(word: str) -> str:
+    """'роза' -> 'роз', 'тюльпан' -> 'тюльпанов', 'гвоздика' -> 'гвоздик'."""
+    w = word.lower().strip()
+    if w.endswith(("ая", "яя")):      # прилагательное: 'красные' -> 'красных'
+        return w[:-2] + "ых"
+    if w.endswith("а"):
+        return w[:-1]
+    if w.endswith("я"):
+        return w[:-1] + "й"
+    if w.endswith(("ь", "й")):
+        return w[:-1] + "ей"
+    return w + "ов"
+
+
 def build_eda_row(*, name: str, variation_label: str, is_mono: bool,
                   price_eda: int, positions: List[Dict[str, Any]],
-                  picture_urls: List[str], description: str) -> List[str]:
-    """Одна строка CSV под формат импорта ЛК."""
-    if is_mono:
+                  picture_urls: List[str], description: str,
+                  height_cm: int = 0, width_cm: int = 0) -> List[str]:
+    """Одна строка CSV под формат импорта ЛК.
+    Вес ВСЕГДА 1 кг; габариты — от флориста, иначе по размеру."""
+    if is_mono and positions:
         cat_name = "Монобукеты"
-        qty = int(variation_label) if variation_label.isdigit() else 1
+        qty = sum(int(p.get("qty", 1)) for p in positions)
+        flower = _plural_gen(str(positions[0]["name"]).split()[0])
+        title = f"Букет из {qty} {flower}"[:100]
+    elif is_mono:
+        cat_name = "Монобукеты"
+        qty = int(variation_label) if str(variation_label).isdigit() else 1
         title = f"Букет из {qty} {name}"[:100]
-        width, height, weight = 30, 40, max(300, qty * 90)
     else:
         cat_name = "Авторские букеты"
         title = f"Авторский букет «{name}» {variation_label}"[:100]
-        width, height, weight = SIZE_DIMS.get(variation_label.upper(), (35, 45, 900))
+    dims_w, dims_h, _ = SIZE_DIMS.get(str(variation_label).upper(), (35, 45, 1000))
+    width = width_cm or (25 if is_mono else dims_w)
+    height = height_cm or dims_h
+    weight = 1000  # всегда 1 кг (правило владельца)
 
     consist_str = ",".join(f"{p['name']}:{int(p['qty'])}" for p in positions)
     if not consist_str:

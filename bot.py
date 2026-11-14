@@ -37,7 +37,7 @@ from market_api import YandexMarketClient, YandexMarketError
 from eda_csv import EdaCsvManager, build_eda_row
 from tilda_mcp import TildaCatalog
 from states import ProductCreationFSM, HideFSM, SyncFSM
-from keyboards import get_main_reply_keyboard
+from keyboards import get_main_reply_keyboard, TILDA_SECTIONS
 import handlers_menu
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -464,10 +464,60 @@ async def sync_size_entered(message: types.Message, state: FSMContext):
         return
     selected = set(data.get("selected") or [])
     data.update({"height_cm": height, "label": label, "width_cm": width or 25})
+    if "Tilda" in selected:
+        # вручную выбираем рубрики Tilda (как в мастере создания)
+        await state.update_data(sync=data)
+        await state.set_state(SyncFSM.waiting_categories)
+        cats = list(data.get("tilda_cats") or [])
+        await message.answer("🗂 <b>Разделы Tilda</b> — отметьте нужные и нажмите «Подтвердить»:",
+                             reply_markup=_sync_cats_keyboard(cats), parse_mode="HTML")
+        return
     await state.clear()
     size_note = f"{height} см, {label}" + (f", ширина {width}" if width else "")
     status = await message.answer(f"⏳ Копирую {data['article']} ({size_note}) → {', '.join(sorted(selected))}…")
     asyncio.create_task(_run_sync(status, data, selected))
+
+
+def _sync_cats_keyboard(selected: List[str]) -> InlineKeyboardMarkup:
+    rows, row = [], []
+    for label, key in TILDA_SECTIONS:
+        mark = "✅" if key in selected else "⬜️"
+        row.append(InlineKeyboardButton(text=f"{mark} {label}", callback_data=f"synccat:{key}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="➡️ Подтвердить выбор", callback_data="synccat:confirm")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@dp.callback_query(F.data.startswith("synccat:"), SyncFSM.waiting_categories)
+async def sync_cat_toggle(callback: types.CallbackQuery, state: FSMContext):
+    _, key = callback.data.split(":", 1)
+    data = (await state.get_data()).get("sync") or {}
+    cats = list(data.get("tilda_cats") or [])
+    if key == "confirm":
+        if not cats:
+            await callback.answer("Выберите хотя бы один раздел", show_alert=True)
+            return
+        selected = set(data.get("selected") or [])
+        await state.clear()
+        h, lbl = data["height_cm"], data["label"]
+        size_note = f"{h} см, {lbl}" + (f", ширина {data.get('width_cm')}" if data.get("width_cm") != 25 else "")
+        status = await callback.message.edit_text(
+            f"⏳ Копирую {data['article']} ({size_note}) → {', '.join(sorted(selected))}…")
+        asyncio.create_task(_run_sync(status, data, selected))
+        await callback.answer()
+        return
+    if key in cats:
+        cats.remove(key)
+    else:
+        cats.append(key)
+    data["tilda_cats"] = cats
+    await state.update_data(sync=data)
+    await callback.message.edit_reply_markup(reply_markup=_sync_cats_keyboard(cats))
+    await callback.answer()
 
 
 async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> None:
@@ -507,8 +557,10 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
     composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
     fw_title = build_marketplace_title(bouquet_name, color, dpos, noun=noun,
                                        quoted=bool(data.get("fw_quoted")))
-    eda_desc = (f"Букет от цветочной студии REN, Санкт-Петербург. "
-                f"Состав: {composition_text}. Аквабокс и кризал в комплекте.")
+    # Описание Еды/Tilda: БЕЗ аквабокса (железное правило), с SEO-ключами
+    eda_desc = (f"{noun} от цветочной студии REN, Санкт-Петербург. "
+                f"Состав: {composition_text}. Свежие цветы утренней поставки, кризал в комплекте. "
+                f"Доставка цветов по Санкт-Петербургу.")
 
     results = [f"Источник: Flowwow «{esc(data['fw_name'])}», {data['fw_price']}₽ → база {base}₽"]
 
@@ -544,7 +596,8 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
         try:
             eda_row = build_eda_row(name=bouquet_name, variation_label=label,
                                     is_mono=(is_mono and noun == "Букет"), price_eda=prices["yandex_eda"],
-                                    positions=dpos, picture_urls=photos, description=eda_desc)
+                                    positions=dpos, picture_urls=photos, description=eda_desc,
+                                    height_cm=height_cm, width_cm=width_cm)
             if eda_csv.append_product(eda_row):
                 results.append(f"✅ Еда: в CSV ({prices['yandex_eda']}₽)")
             else:
@@ -554,21 +607,22 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
 
     if "Tilda" in selected:
         try:
-            tilda_seo = generate_tilda_seo_and_text(bouquet_name, dpos)
+            tilda_seo = generate_tilda_seo_and_text(bouquet_name, dpos, noun=noun)
             tilda_status = await tilda_catalog.create_product(
                 project_id=config.tilda_project_id,
-                title=f"{bouquet_name} {label}",
+                title=f"{noun} «{bouquet_name}»"[:190] if data.get("fw_quoted") else f"{noun} {bouquet_name}"[:190],
                 price_tilda=prices["tilda"],
                 photo_urls=photos,
                 tilda_categories=tilda_cats,
-                description=eda_desc,
+                description="",  # короткое описание не заполняем — правило владельца
                 full_article=article,
                 photo_alts=[tilda_seo.get(f"alt_{i}", "") for i in range(1, 7)],
                 seo_title=tilda_seo.get("title", ""),
                 seo_descr=tilda_seo.get("description", ""),
                 seo_keywords=tilda_seo.get("keywords", ""),
                 height_cm=height_cm,
-                weight_g=weight_g,
+                weight_g=1000,
+                width_cm=width_cm,
             )
             mark = "✅" if "проверен" in tilda_status else "⚠️"
             results.append(f"{mark} Tilda: {esc(tilda_status.splitlines()[0])}")
@@ -1085,7 +1139,8 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
 
         eda_desc = (
             f"Букет от цветочной студии REN, Санкт-Петербург. "
-            f"Состав: {composition_text}. Аквабокс и кризал в комплекте."
+            f"Состав: {composition_text}. Свежие цветы утренней поставки, кризал в комплекте. "
+            f"Доставка цветов по Санкт-Петербургу."
         )
         eda_row = build_eda_row(
             name=name, variation_label=var["label"], is_mono=is_mono,
@@ -1104,7 +1159,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             price_tilda=platform_prices["tilda"],
             photo_urls=uploaded_photo_urls,
             tilda_categories=tilda_cats,
-            description=eda_desc,
+            description="",  # короткое описание не заполняем — правило владельца
             full_article=full_art,
             photo_alts=[tilda_seo.get(f"alt_{i}", "") for i in range(1, 7)],
             seo_title=tilda_seo.get("title", ""),

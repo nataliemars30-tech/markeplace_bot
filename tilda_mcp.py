@@ -136,7 +136,8 @@ class TildaCatalog:
         seo_descr: str = "",
         seo_keywords: str = "",
         height_cm: int = 45,
-        weight_g: int = 900
+        weight_g: int = 1000,
+        width_cm: int = 25
     ) -> str:
         if not self._available:
             return "нет токена (TILDA_MCP_TOKEN)"
@@ -184,8 +185,9 @@ class TildaCatalog:
                 "seo_title": seo_title[:200],
                 "seo_descr": seo_descr[:400],
                 "seo_keywords": seo_keywords[:500],
-                # размеры букета (мм) и вес (г)
-                "pack_x": "250", "pack_y": "250", "pack_z": str(int(height_cm) * 10),
+                # размеры упаковки (мм) и вес (г); ширина — для корзин от флориста
+                "pack_x": str(int(width_cm) * 10), "pack_y": str(int(width_cm) * 10),
+                "pack_z": str(int(height_cm) * 10),
                 "pack_m": str(int(weight_g)),
                 # постоянные доп. товары-опции (из листа «Правила»)
                 "prod_option": options_title,
@@ -277,7 +279,7 @@ class TildaCatalog:
             check("SEO keywords", bool(data.get("seo_keywords")))
             check("артикул", data.get("externalid") == expected["full_article"],
                   str(data.get("externalid")))
-            check("описание", bool(data.get("descr")))
+            check("описание", True, "пустое (по правилу владельца)")
 
             status = "проверен" if ok else "создан с замечаниями"
             return f"{status} (uid {product_uid})\n" + "\n".join(checks)
