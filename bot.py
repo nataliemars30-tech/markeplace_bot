@@ -336,7 +336,8 @@ async def _sync_prepare(message: types.Message, state: FSMContext, arg: str, col
         m_art = re.match(r"(REN(-[A-Z])?-\d{3})(?:-([A-Z0-9]+))?$", article)
         label = (m_art.group(3) or "M")
 
-    # Состав: consist карточки, иначе парсим из описания («Состав: А — 2 шт, Б — 1 шт.»)
+    # Состав: consist карточки, иначе парсим из описания («Состав: А — 2 шт, Б — 1 шт.»),
+    # иначе из названия («...под ленту 5 шт» -> 5 роз)
     dpos = []
     for c in item.get("consist") or []:
         try:
@@ -351,7 +352,13 @@ async def _sync_prepare(message: types.Message, state: FSMContext, arg: str, col
                 if m_q:
                     dpos.append({"name": clean_position_name(m_q.group(1)), "qty": int(m_q.group(2))})
     if not dpos:
-        dpos = [{"name": item.get("name", article), "qty": 1}]
+        fw_name = item.get("name") or ""
+        m_qty = re.search(r"(\d+)\s*шт", fw_name)
+        qty = int(m_qty.group(1)) if m_qty else 1
+        from market_api import match_flower_kinds
+        kinds = match_flower_kinds([fw_name])
+        flower = kinds[0][1] if kinds else fw_name[:60]
+        dpos = [{"name": flower.capitalize(), "qty": qty}]
 
     # Имя букета: из локальной базы, иначе из названия Flowwow («...«Имя»...»)
     record = get_product_by_article(article)
@@ -368,6 +375,7 @@ async def _sync_prepare(message: types.Message, state: FSMContext, arg: str, col
         "label": label, "dpos": dpos, "bouquet_name": bouquet_name,
         "tilda_cats": tilda_cats,
         "fw_name": item.get("name", article), "fw_price": item.get("price"),
+        "fw_desc": item.get("description") or "",
         "selected": list(SYNC_PLATFORMS),
     })
     await state.set_state(SyncFSM.choosing)
@@ -456,9 +464,13 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
     bouquet_name = data["bouquet_name"]
     tilda_cats = data["tilda_cats"]
     height_cm = data["height_cm"]
-    weight_g = {"S": 600, "M": 900, "L": 1400}.get(str(label).upper(), 900)
+    label = data["label"]
+    weight_g = 1000  # вес для Маркета всегда 1 кг (правило владельца)
     is_mono = len({p["name"].split()[0].lower() for p in dpos}) == 1
-    packaging_label = "Пленка"  # на Flowwow у REN букеты в упаковке по умолчанию
+    # Оформление: определяем по названию/описанию (аквабокс НИКОМУ не указываем)
+    fw_text = ((data.get("fw_name") or "") + " " + (data.get("fw_desc") or "")).lower()
+    pack_words = ("упаковк", "пленк", "плёнк", "тишью", "фоамиран", "корейк")
+    packaging_label = "Пленка" if any(w in fw_text for w in pack_words) else "Под ленту"
 
     composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
     fw_title = build_marketplace_title(bouquet_name, color, dpos)
@@ -479,8 +491,8 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
                 composition=composition_text,
                 total_flowers=count_stems(dpos),
                 height_cm=height_cm,
-                size_label="" if is_mono else label,
-                weight_kg=round(weight_g / 1000, 2),
+                size_label=label,
+                weight_kg=1.0,
                 diameter_cm=25,
                 height_pack_cm=max(height_cm + 10, 40),
                 okpd2="01.19.21.190", tnved="0603197000",
@@ -1006,8 +1018,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         color_vid = market_color_value_id(color)
         filter_color_vid = market_filter_color_id(color)
         flower_names = [p.get("name", "") for p in dpos]
-        weight_g = (max(300, int(var['label']) * 90) if is_mono and str(var['label']).isdigit()
-                    else {"S": 600, "M": 900, "L": 1400}.get(str(var['label']).upper(), 900))
+        weight_g = 1000  # вес для Маркета всегда 1 кг (правило владельца)
         seo_desc = await generate_description(name, color, composition_text, packaging_label, "market")
         await asyncio.sleep(1)  # дать файлам гарантированно осесть на диск перед скачиванием Маркетом
         try:

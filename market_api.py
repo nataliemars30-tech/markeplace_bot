@@ -75,10 +75,11 @@ FILTER_COLOR_IDS = {
     "разноцветный": 15727440
 }
 
-# Вид цветов (43672710, multivalue): фраза -> (valueId, каноническое название для value)
+        # Вид цветов (43672710, multivalue): фраза -> (valueId, каноническое название для value)
 FLOWER_KIND_MAP = [
     ("роза пионовидная", 44406358, "роза пионовидная"),
     ("роза кустовая", 44406375, "роза кустовая"),
+    ("пионовидная роза", 44406358, "роза пионовидная"),
     ("роза", 44406335, "роза"),
     ("гвоздика", 44406343, "гвоздика"),
     ("хризантема", 44406402, "хризантема"),
@@ -113,6 +114,35 @@ FLOWER_KIND_MAP = [
     ("василек", 44406429, "василек"),
     ("антуриум", None, ""), ("эустома", None, "")  # нет в справочнике Маркета
 ]
+
+# Зелень и наполнители — не относим к «Виду цветов»
+_NOT_FLOWER_WORDS = ("эвкалипт", "писташ", "раскус", "аспарагус", "буплерум", "зелень",
+                     "салал", "рускус", "питтоспорум", "гиперикум", "розмарин", "литопс")
+
+
+def match_flower_kinds(names: List[str]) -> List[tuple]:
+    """Определяет виды цветов по названиям позиций. Понимает склонения/множественное:
+    'розы', 'роз', 'пионовидные розы' -> роза; 'гвоздики' -> гвоздика."""
+    found = []
+    added = set()
+    for pname in names or []:
+        low = str(pname).lower().replace("ё", "е")
+        words = [w.strip(",.()«»") for w in low.split()]
+        if any(g in low for g in _NOT_FLOWER_WORDS):
+            continue
+        for phrase, vid, canonical in FLOWER_KIND_MAP:
+            if not vid or vid in added:
+                continue
+            if phrase in low:
+                found.append((vid, canonical))
+                added.add(vid)
+                continue
+            # морфология: 'розы'/'роз' по основе 'роза'->'роз', 'тюльпаны'->'тюльпан'
+            stem = phrase[:-1] if phrase.endswith(("а", "я")) else phrase
+            if len(stem) >= 3 and any(w.startswith(stem) for w in words):
+                found.append((vid, canonical))
+                added.add(vid)
+    return found
 
 # Повод (27141030) — отмечаем ВСЕ значения справочника
 ALL_OCCASIONS = [
@@ -205,14 +235,14 @@ class YandexMarketClient:
             {"parameterId": PARAMS["Высота букета"], "value": str(height_cm)},
             {"parameterId": PARAMS["Единиц в одной упаковке"], "value": "1"},
             {"parameterId": PARAMS["Количество упаковок в товаре"], "value": "1"},
-            {"parameterId": PARAMS["Оформление"], "valueId": 44624283, "value": "аквабокс"},
+            # Оформление: ТОЛЬКО плёнка или под ленту (аквабокс никому не указываем — правило владельца)
             {"parameterId": PARAMS["Сборка"], "valueId": 44625852, "value": "на стеблях"},
-            # Дополнительная информация и прочие характеристики — закрываем баллы заполненности
             {"parameterId": PARAMS["Дополнительная информация"],
              "value": "Букет собирается флористом в день доставки. Цветочная студия REN, Санкт-Петербург."},
+            # Прочие характеристики: формат «Название:значение» (требование Маркета)
             {"parameterId": PARAMS["Прочие характеристики"],
-             "value": "Состав и оттенки могут незначительно варьироваться в зависимости от поставки — "
-                      "флорист сохраняет настроение и цветовую гамму букета."},
+             "value": "Вариативность состава:состав и оттенки могут незначительно меняться в зависимости "
+                      "от поставки, флорист сохраняет настроение и цветовую гамму букета"},
         ]
         # Кому: отмечаем ВСЕ значения справочника (максимум баллов)
         for vid, vname in ALL_AUDIENCE:
@@ -246,16 +276,10 @@ class YandexMarketClient:
         parameter_values.append(
             {"parameterId": PARAMS["Тип"], "valueId": type_id,
              "value": "монобукет" if bouquet_type == "mono" else "сборный букет"})
-        # Вид цветов (multivalue) — по названиям позиций состава
-        added_kinds = set()
-        for pname in flower_names or []:
-            low = str(pname).lower()
-            for phrase, vid, canonical in FLOWER_KIND_MAP:
-                if vid and phrase in low and vid not in added_kinds:
-                    parameter_values.append(
-                        {"parameterId": PARAMS["Вид цветов"], "valueId": vid, "value": canonical})
-                    added_kinds.add(vid)
-                    break
+        # Вид цветов (multivalue) — автоопределение по составу с морфологией
+        for vid, canonical in match_flower_kinds(flower_names):
+            parameter_values.append(
+                {"parameterId": PARAMS["Вид цветов"], "valueId": vid, "value": canonical})
 
         # Зелень (multivalue) — по названиям позиций состава
         added_green = set()
