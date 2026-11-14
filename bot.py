@@ -20,7 +20,7 @@ from aiogram.types import (
 from aiohttp import web
 
 from config import config
-from db import init_db, get_next_article, save_product_variation, save_review, mark_review_answered, get_pending_reviews, get_review_draft
+from db import init_db, get_next_article, save_product_variation, save_review, mark_review_answered, get_pending_reviews, get_review_draft, get_product_by_article
 from yandex_disk import YandexDiskClient, YandexDiskError
 from moysklad_api import MoySkladClient, MoySkladAuthError, MoySkladAPIError
 from flowwow_api import FlowwowClient, FlowwowAPIError
@@ -28,7 +28,7 @@ from platform_rules import (
     get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices,
     generate_flowwow_description, count_stems, market_color_value_id, market_filter_color_id,
     generate_market_seo_description, display_positions, generate_flowwow_title,
-    generate_tilda_seo_and_text, build_marketplace_title
+    generate_tilda_seo_and_text, build_marketplace_title, clean_position_name
 )
 from seo_generator import generate_description
 from sheets_api import GoogleSheetsManager
@@ -236,6 +236,146 @@ async def reviews_poller():
         except Exception as e:
             logger.warning(f"Поллер отзывов: {e}")
         await asyncio.sleep(REVIEWS_POLL_SECONDS)
+
+
+@dp.message(Command("sync"))
+async def cmd_sync(message: types.Message):
+    """Копирование существующего товара Flowwow на остальные площадки.
+    Формат: /sync REN-011-M [цвет/гамма]  (цвет опционально, по умолчанию Разноцветный)"""
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 2 or not re.fullmatch(r"REN(-[A-Z])?-\d{3}(-[A-Z0-9]+)?", parts[1].strip().upper()):
+        await message.reply("Формат: /sync REN-011-M [цвет]\n"
+                            "Копирует товар, который есть на Flowwow, на Маркет, Еду и Tilda.")
+        return
+    article = parts[1].strip().upper()
+    color = parts[2].strip() if len(parts) > 2 else "Разноцветный"
+    status = await message.answer(f"⏳ Ищу {article} на Flowwow…")
+
+    item = await fw_client.get_product(article)
+    if not item:
+        await status.edit_text(f"❌ {article} не найден на Flowwow. Проверьте артикул.")
+        return
+
+    # Базовая цена из цены Flowwow (обратная матрица: fw=(base+150)×1.5)
+    try:
+        base = int(round((float(item.get("price", 0)) / 1.5 - 150) / 10) * 10)
+    except (TypeError, ValueError):
+        base = 0
+    if base <= 0:
+        await status.edit_text(f"❌ Не смог вычислить базовую цену из цены Flowwow ({item.get('price')}).")
+        return
+    prices = calculate_platform_prices(base)
+    photos = [u for u in (item.get("images") or []) if u][:6]
+    if not photos:
+        await status.edit_text("❌ У товара на Flowwow нет фото — нечего копировать.")
+        return
+
+    m_art = re.match(r"(REN(-[A-Z])?-\d{3})(?:-([A-Z0-9]+))?$", article)
+    base_article, label = m_art.group(1), (m_art.group(3) or "M")
+
+    # Состав: consist карточки, иначе парсим из описания («Состав: А — 2 шт, Б — 1 шт.»)
+    dpos = []
+    for c in item.get("consist") or []:
+        try:
+            dpos.append({"name": clean_position_name(str(c.get("name", ""))), "qty": int(c.get("quantity", 1))})
+        except (TypeError, ValueError):
+            continue
+    if not dpos:
+        m_comp = re.search(r"Состав:\s*(.+?)(?:\.|$)", item.get("description") or "", re.S)
+        if m_comp:
+            for chunk in m_comp.group(1).split(","):
+                m_q = re.match(r"(.+?)\s*—\s*(\d+)\s*шт", chunk.strip())
+                if m_q:
+                    dpos.append({"name": clean_position_name(m_q.group(1)), "qty": int(m_q.group(2))})
+    if not dpos:
+        dpos = [{"name": item.get("name", article), "qty": 1}]
+
+    # Имя букета: из локальной базы, иначе из названия Flowwow («...«Имя»...»)
+    record = get_product_by_article(article)
+    bouquet_name = record["name"] if record else (item.get("name") or article)
+    if not record:
+        m_name = re.search(r"«([^»]+)»", item.get("name") or "")
+        if m_name:
+            bouquet_name = m_name.group(1)
+    tilda_cats = [c.strip() for c in (record["tilda_category"] or "").split(";") if c.strip()] or ["Нежные"]
+
+    composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
+    fw_title = build_marketplace_title(bouquet_name, color, dpos)
+    height_cm = 45
+    m_h = re.search(r"(\d{2,3})\s*см", item.get("description") or "")
+    if m_h:
+        height_cm = int(m_h.group(1))
+    weight_g = {"S": 600, "M": 900, "L": 1400}.get(str(label).upper(), 900)
+    is_mono = len({p["name"].split()[0].lower() for p in dpos}) == 1
+    packaging_label = "Пленка" if ("пленк" in (item.get("description") or "").lower()
+                                   or "упаков" in (item.get("description") or "").lower()) else "Под ленту"
+    desc = await generate_description(bouquet_name, color, composition_text, packaging_label, "market")
+
+    results = [f"Источник: Flowwow «{esc(item.get('name', article))}», цена {item.get('price')}₽ → база {base}₽"]
+
+    # --- Маркет ---
+    try:
+        await market_client.create_card(
+            offer_id=article,
+            name=fw_title,
+            price=prices["yandex_market"],
+            pictures=photos,
+            description=desc,
+            composition=composition_text,
+            total_flowers=count_stems(dpos),
+            height_cm=height_cm,
+            size_label="" if is_mono else label,
+            weight_kg=round(weight_g / 1000, 2),
+            diameter_cm=25,
+            height_pack_cm=max(height_cm + 10, 40),
+            okpd2="01.19.21.190", tnved="0603197000",
+            packaging_film=(packaging_label == "Пленка"),
+            color_value_id=market_color_value_id(color),
+            bouquet_type="mono" if is_mono else "author",
+            flower_names=[p["name"] for p in dpos],
+            filter_color_id=market_filter_color_id(color),
+        )
+        results.append(f"✅ Маркет: карточка отправлена ({prices['yandex_market']}₽)")
+    except YandexMarketError as e:
+        results.append(f"⚠️ Маркет: {esc(str(e))[:120]}")
+
+    # --- Еда ---
+    try:
+        eda_desc = (f"Букет от цветочной студии REN, Санкт-Петербург. "
+                    f"Состав: {composition_text}. Аквабокс и кризал в комплекте.")
+        eda_row = build_eda_row(name=bouquet_name, variation_label=label,
+                                is_mono=is_mono, price_eda=prices["yandex_eda"],
+                                positions=dpos, picture_urls=photos, description=eda_desc)
+        if eda_csv.append_product(eda_row):
+            results.append(f"✅ Еда: в CSV ({prices['yandex_eda']}₽)")
+        else:
+            results.append("⚠️ Еда: ошибка записи CSV")
+    except Exception as e:
+        results.append(f"⚠️ Еда: {esc(str(e))[:120]}")
+
+    # --- Tilda ---
+    tilda_seo = generate_tilda_seo_and_text(bouquet_name, dpos)
+    tilda_status = await tilda_catalog.create_product(
+        project_id=config.tilda_project_id,
+        title=f"{bouquet_name} {label}",
+        price_tilda=prices["tilda"],
+        photo_urls=photos,
+        tilda_categories=tilda_cats,
+        description=eda_desc,
+        full_article=article,
+        photo_alts=[tilda_seo.get(f"alt_{i}", "") for i in range(1, 7)],
+        seo_title=tilda_seo.get("title", ""),
+        seo_descr=tilda_seo.get("description", ""),
+        seo_keywords=tilda_seo.get("keywords", ""),
+        height_cm=height_cm,
+        weight_g=weight_g,
+    )
+    results.append(f"{'✅' if 'проверен' in tilda_status else '⚠️'} Tilda: {esc(tilda_status.splitlines()[0])}")
+    if tilda_catalog.last_report:
+        results.append("\n".join(tilda_catalog.last_report.splitlines()[1:]))
+
+    await status.edit_text(f"🔄 <b>{article}</b> → остальные площадки\n" + "\n".join(results),
+                           parse_mode="HTML")
 
 
 @dp.message(Command("reload"))
@@ -869,7 +1009,11 @@ async def main():
     logger.info("Удаление старого вебхука...")
     await bot.delete_webhook(drop_pending_updates=True)
     logger.info("Запуск поллера отзывов Flowwow...")
-    asyncio.create_task(reviews_poller())
+    if config.reviews_enabled.lower() in ("on", "1", "yes", "true", "вкл"):
+        asyncio.create_task(reviews_poller())
+        logger.info("Поллер отзывов ВКЛЮЧЁН")
+    else:
+        logger.info("Поллер отзывов ОТКЛЮЧЁН (REVIEWS_ENABLED=off)")
     logger.info("Запуск бота...")
     await dp.start_polling(bot)
 

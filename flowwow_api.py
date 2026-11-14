@@ -109,6 +109,21 @@ class FlowwowClient:
             return {"success": True}
         raise FlowwowAPIError(f"Flowwow: {data.get('message') or data}")
 
+    async def get_product(self, offer_id: str) -> Optional[Dict[str, Any]]:
+        """Полная карточка товара по offerId (для команды /sync)."""
+        url = f"{self.BASE_URL}/products"
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(url, headers=self._get_headers(),
+                                     json={"shopId": self.shop_id, "offerIds": [offer_id]})
+        try:
+            data = resp.json()
+            for item in data.get("items", []):
+                if item.get("offerId") == offer_id:
+                    return item
+        except Exception:
+            pass
+        return None
+
     async def get_product_url(self, offer_id: str) -> Optional[str]:
         """Получить публичную ссылку на карточку товара по offerId."""
         url = f"{self.BASE_URL}/products"

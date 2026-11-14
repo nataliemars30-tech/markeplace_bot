@@ -120,6 +120,17 @@ def get_pending_reviews() -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_product_by_article(full_article: str) -> Optional[Dict[str, Any]]:
+    """Локальная запись товара по полному артикулу (для /sync)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT base_article, full_article, name, variation, price, tilda_category, cover_url "
+            "FROM products WHERE full_article = ? ORDER BY id DESC LIMIT 1;",
+            (full_article,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def get_next_article(root_category: str) -> str:
     """Генерация следующего сквозного артикула с префиксом в зависимости от категории."""
     prefix_map = {

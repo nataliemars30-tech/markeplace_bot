@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     openai_base_url: str = Field("https://api.moonshot.cn/v1", alias="OPENAI_BASE_URL")
     openai_model: str = Field("moonshot-v1-8k", alias="OPENAI_MODEL")
 
+    # Поллер отзывов Flowwow (on/off) — по умолчанию выключен
+    reviews_enabled: str = Field("off", alias="REVIEWS_ENABLED")
+
     # Яндекс Диск
     yandex_disk_token: str = Field(..., alias="YANDEX_DISK_TOKEN")
 
