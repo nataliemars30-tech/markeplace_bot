@@ -360,7 +360,8 @@ async def _sync_prepare(message: types.Message, state: FSMContext, arg: str, col
         m_name = re.search(r"«([^»]+)»", item.get("name") or "")
         if m_name:
             bouquet_name = m_name.group(1)
-    tilda_cats = [c.strip() for c in (record["tilda_category"] or "").split(";") if c.strip()] or ["Нежные"]
+    tilda_cats_raw = (record.get("tilda_category") or "") if record else ""
+    tilda_cats = [c.strip() for c in tilda_cats_raw.split(";") if c.strip()] or ["Нежные"]
 
     await state.update_data(sync={
         "article": article, "color": color, "base": base, "photos": photos,
