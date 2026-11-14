@@ -84,6 +84,11 @@
   запрета индексации.
 - Чек-лист сайта: Title/Description, ЧПУ, H1-H3, alt, фавикон, 404, редиректы, публикация.
 
+## Команды бота
+- /sync REN-NNN-X [цвет] — копировать товар с Flowwow на Маркет, Еду и Tilda (цена обратной матрицей, состав из consist/описания, фото с CDN Flowwow).
+- /purge REN-NNN — вычистить артикул везде (CSV Еды, архив Flowwow, удаление с Маркета).
+- /reload — перечитать лист «Правила». /otvet, /ok — отзывы (поллер отзывов выключен: REVIEWS_ENABLED=off).
+
 ## Инфраструктура
 - Репозиторий: github.com/nataliemars30-tech/markeplace_bot, деплой на Railway автоматический.
 - Пуш из этой среды: `git -c http.sslBackend=openssl push origin main`.
