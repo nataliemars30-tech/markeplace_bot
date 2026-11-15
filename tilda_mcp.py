@@ -193,7 +193,7 @@ class TildaCatalog:
                 "prod_option": options_title,
                 "prod_variants": json.dumps(options, ensure_ascii=False),
             })
-            self.last_report = self._verify_product(project_id, product_uid, {
+            self.last_report = await self._verify_product(project_id, product_uid, {
                 "title": title, "price": str(price_tilda), "partuids": partuids,
                 "expected_photos": len(photo_urls), "seo_title": seo_title,
                 "full_article": full_article,
@@ -245,11 +245,11 @@ class TildaCatalog:
                 cdn.append(u)
         return cdn
 
-    def _verify_product(self, project_id: int, product_uid: str, expected: Dict[str, Any]) -> str:
+    async def _verify_product(self, project_id: int, product_uid: str, expected: Dict[str, Any]) -> str:
         """Авто-проверка опубликованного товара: бот сам сверяет, что Tilda
         реально сохранила все поля, и выдаёт итог ✅/⚠️ (ручная проверка не нужна)."""
         try:
-            raw = self.client.call_tool("store_get_products", {
+            raw = await self.client.call_tool("store_get_products", {
                 "projectid": project_id, "productuid": int(product_uid)
             })
             data = json.loads(raw) if isinstance(raw, str) else raw
