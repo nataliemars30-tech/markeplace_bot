@@ -137,7 +137,8 @@ class TildaCatalog:
         seo_keywords: str = "",
         height_cm: int = 45,
         weight_g: int = 1000,
-        width_cm: int = 25
+        width_cm: int = 25,
+        text_html: str = ""
     ) -> str:
         if not self._available:
             return "нет токена (TILDA_MCP_TOKEN)"
@@ -180,6 +181,7 @@ class TildaCatalog:
                 "partuids": partuids,
                 "gallery": gallery,
                 "descr": description[:1000],
+                "text": text_html,
                 "sku": full_article,
                 "externalid": full_article,
                 "seo_title": seo_title[:200],

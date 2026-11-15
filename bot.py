@@ -373,8 +373,9 @@ async def _sync_prepare(message: types.Message, state: FSMContext, arg: str, col
         # старое название без кавычек — чистим от слова-категории (корзина/бокс),
         # чтобы не дублировалось в названии
         bouquet_name = fw_name.strip().strip('"')
-        for noun_word in ("корзина", "корзины", "бокс", "бокса", "композиция"):
-            bouquet_name = re.sub(rf"\b{noun_word}\b", "", bouquet_name, flags=re.I).strip()
+        for noun_word in ("букет", "букета", "корзина", "корзины", "бокс", "бокса", "композиция"):
+            bouquet_name = re.sub(rf"^\s*{noun_word}\s+", "", bouquet_name, flags=re.I)
+            bouquet_name = re.sub(rf"\b{noun_word}\b", "", bouquet_name, flags=re.I)
         bouquet_name = re.sub(r"\s{2,}", " ", bouquet_name).strip(" ,-") or fw_name[:60]
     tilda_cats_raw = (record.get("tilda_category") or "") if record else ""
     tilda_cats = [c.strip() for c in tilda_cats_raw.split(";") if c.strip()] or ["Нежные"]
@@ -625,6 +626,7 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
                 height_cm=height_cm,
                 weight_g=1000,
                 width_cm=width_cm,
+                text_html=tilda_seo.get("text", "").replace("\n", "<br>"),
             )
             mark = "✅" if "проверен" in tilda_status else "⚠️"
             results.append(f"{mark} Tilda: {esc(tilda_status.splitlines()[0])}")

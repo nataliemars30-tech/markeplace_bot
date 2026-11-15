@@ -4,6 +4,7 @@
 Источник истины по допустимым полям карточки Flowwow: /categories/subCategoryProperties.
 """
 
+import re
 from typing import Dict, Any, List
 
 
@@ -150,7 +151,7 @@ def generate_tilda_seo_and_text(name: str, positions: List[Dict[str, Any]], styl
                 f"утренней поставки, сборка флористом в день доставки. Быстрая доставка по СПб.")
         keywords = (f"купить {noun.lower()} спб, {flowers_sample.lower()}, доставка цветов "
                     f"санкт-петербург, {noun.lower()} с доставкой, студия ren")
-        short = f"{noun} {str(name)[:30]}"
+        short = str(name)[:30]
     else:
         lead = f"букет {name} с {flowers_sample.lower()}"
         title = f"Букет «{name}» с {flowers_sample} в СПб — купить с доставкой | REN"[:70]
@@ -159,6 +160,8 @@ def generate_tilda_seo_and_text(name: str, positions: List[Dict[str, Any]], styl
         keywords = (f"купить букет {name.lower()} спб, доставка цветов санкт-петербург, "
                     f"авторский букет ren, цветы на день рождения спб")
         short = f"{name}"
+    # антидубль: имя не должно начинаться со слова-категории
+    short = re.sub(rf"^\s*{re.escape(noun.lower())}\s+", "", short.lower(), flags=re.I).strip() or short
     prod_text = (
         f"{noun} «{short}» собран в узнаваемом почерке студии REN: сложная колористика, "
         f"воздух между бутонами и игра фактур. Состав: {flowers_sample}.\n\n"
