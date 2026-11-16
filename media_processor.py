@@ -21,6 +21,32 @@ def _has_encoder() -> bool:
         return False
 
 
+HEIC_MAGICS = (b"ftypheic", b"ftypheix", b"ftypmif1", b"ftypmsf1")
+
+
+def ensure_jpeg(path: Path) -> Path:
+    """Если файл — HEIC/HEIF (iPhone), конвертирует в настоящий JPEG на том же пути.
+    Площадки (Flowwow, Маркет, Tilda CDN, Еда) HEIC не принимают."""
+    try:
+        head = path.read_bytes()[:16]
+    except OSError:
+        return path
+    if not any(m in head for m in HEIC_MAGICS):
+        return path
+    try:
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+        from PIL import Image
+        img = Image.open(path)
+        tmp = path.with_suffix(path.suffix + ".conv.jpg")
+        img.convert("RGB").save(tmp, "JPEG", quality=90)
+        tmp.replace(path)
+        logger.info(f"HEIC -> JPEG сконвертирован: {path.name}")
+    except Exception as e:
+        logger.warning(f"HEIC-конвертация не удалась для {path}: {e}")
+    return path
+
+
 def compress_video_sync(input_path: Path, output_path: Path) -> bool:
     """Сжатие видео: H.264, до 1080p по большей стороне, CRF 28, без звука.
     Если результат пустой/битый — фолбэк на исходник без перекодирования."""

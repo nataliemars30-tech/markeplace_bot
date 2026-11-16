@@ -227,11 +227,16 @@ class TildaCatalog:
                     src = Path(td) / "src.img"
                     dst = Path(td) / "dst.jpg"
                     src.write_bytes(raw.content)
+                    # HEIC (iPhone) ffmpeg часто не берёт — пробуем PIL/pillow-heif
+                    src = ensure_jpeg(src)
                     resized = subprocess.run(
                         ["ffmpeg", "-y", "-i", str(src),
                          "-vf", "scale='min(2000,iw)':-2", str(dst)],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    payload = dst.read_bytes() if resized.returncode == 0 and dst.exists() else raw.content
+                    if resized.returncode == 0 and dst.exists():
+                        payload = dst.read_bytes()
+                    else:
+                        payload = src.read_bytes()
                 res = await self.client.call_tool("upload_image", {
                     "projectid": project_id,
                     "images": [{

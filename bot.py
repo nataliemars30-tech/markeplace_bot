@@ -33,7 +33,7 @@ from platform_rules import (
 from seo_generator import generate_description  # LLM-вариант (отложено); основной текст — description_builder
 from description_builder import generate_marketplace_description
 from sheets_api import GoogleSheetsManager
-from media_processor import mute_video_async, compress_video_async
+from media_processor import mute_video_async, compress_video_async, ensure_jpeg
 from market_api import YandexMarketClient, YandexMarketError
 from eda_csv import EdaCsvManager, build_eda_row
 from tilda_mcp import TildaCatalog
@@ -1073,6 +1073,9 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
 
             file_obj = await bot.get_file(f_id)
             await bot.download_file(file_obj.file_path, destination=local_path)
+            # iPhone-фото в формате HEIC переименовываются в .jpg, но байты HEIC —
+            # площадки их не принимают, конвертируем в настоящий JPEG
+            local_path = await asyncio.to_thread(ensure_jpeg, local_path)
 
             shutil.copy2(local_path, photos_dir / local_filename)
             stable_url = f"{public_base}/photos/{base_article}/{local_filename}" if public_base else None

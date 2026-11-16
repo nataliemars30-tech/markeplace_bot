@@ -5,3 +5,5 @@ pydantic-settings>=2.7.1
 python-dotenv>=1.0.1
 gspread>=6.1.4
 google-auth>=2.38.0
+pillow-heif>=0.16.0
+Pillow>=10.0.0
