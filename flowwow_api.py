@@ -75,8 +75,9 @@ class FlowwowClient:
             "width": {"val": width_cm, "measure": 3},
             "height": {"val": height_cm, "measure": 3},
             # Производитель — обязательное поле карточки (правило владельца, лист «Правила»)
+            # manufacturerAddress НЕДОПУСТИМО для букетов (зависит от подкатегории) —
+            # Flowwow отклоняет всю карточку с «Поле недопустимо» (16.11, проверено)
             "manufacturerName": rule_get("flowwow", "производитель_название", "REN, Россия"),
-            "manufacturerAddress": rule_get("flowwow", "производитель_адрес", "Россия, Санкт-Петербург"),
             "manufacturerCountry": 1,  # Россия (справочник subCategoryProperties)
             "consist": consist or [{"name": name, "quantity": 1, "measure": 1}]
         }
