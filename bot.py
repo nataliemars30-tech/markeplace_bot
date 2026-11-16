@@ -374,7 +374,7 @@ async def _sync_prepare(message: types.Message, state: FSMContext, arg: str, col
         # старое название без кавычек — чистим от слова-категории (корзина/бокс),
         # чтобы не дублировалось в названии
         bouquet_name = fw_name.strip().strip('"')
-        for noun_word in ("букет", "букета", "корзина", "корзины", "бокс", "бокса", "композиция"):
+        for noun_word in ("монобукет", "букет", "букета", "корзина", "корзины", "бокс", "бокса", "композиция"):
             bouquet_name = re.sub(rf"^\s*{noun_word}\s+", "", bouquet_name, flags=re.I)
             bouquet_name = re.sub(rf"\b{noun_word}\b", "", bouquet_name, flags=re.I)
         bouquet_name = re.sub(r"\s{2,}", " ", bouquet_name).strip(" ,-") or fw_name[:60]

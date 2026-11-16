@@ -145,9 +145,11 @@ def generate_tilda_seo_and_text(name: str, positions: List[Dict[str, Any]], styl
     Для длинных старых названий (>25 симв) — шаблон от существительного и состава."""
     flowers_sample = ", ".join(p["name"] for p in positions[:2]) if positions else "цветами"
     if len(str(name)) > 25 and positions:
-        lead = f"{noun.lower()} с {flowers_sample.lower()}"
-        title = f"{noun} с {flowers_sample} — купить с доставкой в СПб | REN"[:70]
-        desc = (f"{noun} с {flowers_sample} от студии REN в Санкт-Петербурге. Свежие цветы "
+        _ins = _instrumental  # локальная ссылка на модульную функцию
+        flowers_ins = ", ".join(_ins(p["name"]) for p in positions[:2])
+        lead = f"{noun.lower()} с {flowers_ins.lower()}"
+        title = f"{noun} с {flowers_ins} — купить с доставкой в СПб | REN"[:70]
+        desc = (f"{noun} с {flowers_ins} от студии REN в Санкт-Петербурге. Свежие цветы "
                 f"утренней поставки, сборка флористом в день доставки. Быстрая доставка по СПб.")
         keywords = (f"купить {noun.lower()} спб, {flowers_sample.lower()}, доставка цветов "
                     f"санкт-петербург, {noun.lower()} с доставкой, студия ren")
