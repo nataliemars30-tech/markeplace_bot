@@ -68,7 +68,9 @@ class FlowwowClient:
             "discount": "0",
             "description": description or composition or name,
             "images": photo_urls,
-            "productionTime": {"val": production_time, "measure": 7},
+            # Flowwow (16.11): productionTime и stock ВЗАИМОИСКЛЮЧАЮЩИЕ,
+            # теперь обязателен stock — передаём наличие, а не время изготовления
+            "stock": 1,
             "minOrderCount": 1,
             "width": {"val": width_cm, "measure": 3},
             "height": {"val": height_cm, "measure": 3},

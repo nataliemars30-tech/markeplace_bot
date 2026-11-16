@@ -1,18 +1,1 @@
-venv/
-.env
-__pycache__/
-*.pyc
-.DS_Store
-
-# Ключи — только через переменные окружения
-google_credentials.json
-*.pem
-*.key
-
-# Локальные данные
-data/*.json
-data/*.csv
-data/temp/
-!data/.gitkeep
-ren011_fw_update.json
-params*.json
+.secrets.local
