@@ -36,8 +36,8 @@ def ensure_jpeg(path: Path) -> Path:
     try:
         import pillow_heif
         pillow_heif.register_heif_opener()
-        from PIL import Image
-        img = Image.open(path)
+        from PIL import Image, ImageOps
+        img = ImageOps.exif_transpose(Image.open(path))  # иначе фото с iPhone «переворачиваются»
         tmp = path.with_suffix(path.suffix + ".conv.jpg")
         img.convert("RGB").save(tmp, "JPEG", quality=90)
         tmp.replace(path)

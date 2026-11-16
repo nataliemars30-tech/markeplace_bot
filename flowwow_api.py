@@ -79,6 +79,8 @@ class FlowwowClient:
             # Flowwow отклоняет всю карточку с «Поле недопустимо» (16.11, проверено)
             "manufacturerName": rule_get("flowwow", "производитель_название", "REN, Россия"),
             "manufacturerCountry": 1,  # Россия (справочник subCategoryProperties)
+            # тематические подборки — отмечаем ВСЕ (правило владельца 17.11)
+            "thematicSelections": [1, 32, 33, 34, 39, 40, 48, 53, 102, 159],
             "consist": consist or [{"name": name, "quantity": 1, "measure": 1}]
         }
         # Цвет товара (справочник Flowwow) — из гаммы букета

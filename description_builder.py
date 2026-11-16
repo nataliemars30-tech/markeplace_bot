@@ -116,12 +116,19 @@ def generate_marketplace_description(
         if clean and clean.lower() not in {c.lower() for c in cleaned_flowers}:
             cleaned_flowers.append(clean)
 
-    if len(cleaned_flowers) >= 2:
+    # Формируем 1-2 ключевых цветка для первого предложения (SEO-сниппет).
+    # Роза — главный коммерческий компонент: если есть в составе, выводим первой.
+    lead_list = list(cleaned_flowers)
+    for i, fl in enumerate(lead_list):
+        if "роза" in fl.lower() or fl.lower().startswith("роз "):
+            lead_list.insert(0, lead_list.pop(i))
+            break
+    if len(lead_list) >= 2:
         from platform_rules import _instrumental
-        lead_flowers = f" с {_instrumental(cleaned_flowers[0])}, {_instrumental(cleaned_flowers[1])}"
-    elif len(cleaned_flowers) == 1:
+        lead_flowers = f" с {_instrumental(lead_list[0])}, {_instrumental(lead_list[1])}"
+    elif len(lead_list) == 1:
         from platform_rules import _instrumental
-        lead_flowers = f" с {_instrumental(cleaned_flowers[0])}"
+        lead_flowers = f" с {_instrumental(lead_list[0])}"
     else:
         lead_flowers = ""
 
