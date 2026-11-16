@@ -347,6 +347,41 @@ class YandexMarketClient:
             raise YandexMarketError(f"Маркет ERROR: {json.dumps(data, ensure_ascii=False)[:400]}")
         return {"success": True, "offerId": offer_id}
 
+    async def add_video(self, offer_id: str, video_url: str) -> Dict[str, Any]:
+        """Прикрепить видео к существующей карточке (команда /видео).
+
+        Читает текущий оффер, добавляет videos и пересохраняет целиком —
+        частичный апдейт безопаснее делать через полный оффер.
+        """
+        url = f"{self.BASE_URL}/businesses/{self.BUSINESS_ID}/offer-mappings"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=self._headers(),
+                                     json={"offerIds": [offer_id]})
+        try:
+            data = resp.json()
+        except Exception:
+            raise YandexMarketError(f"Маркет не-JSON [{resp.status_code}]: {resp.text[:200]}")
+        mappings = (data.get("result") or {}).get("offerMappings") or []
+        offer = None
+        for m in mappings:
+            if (m.get("offer") or {}).get("offerId") == offer_id:
+                offer = m["offer"]
+                break
+        if not offer:
+            raise YandexMarketError(f"карточка {offer_id} не найдена в кабинете")
+        offer["videos"] = [video_url]
+        upd = f"{self.BASE_URL}/businesses/{self.BUSINESS_ID}/offer-mappings/update"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(upd, headers=self._headers(),
+                                     json={"offerMappings": [{"offer": offer}]})
+        try:
+            res = resp.json()
+        except Exception:
+            raise YandexMarketError(f"Маркет не-JSON [{resp.status_code}]: {resp.text[:200]}")
+        if resp.status_code != 200 or res.get("status") == "ERROR":
+            raise YandexMarketError(f"Маркет: {json.dumps(res, ensure_ascii=False)[:300]}")
+        return {"success": True}
+
     async def delete_offer(self, offer_id: str) -> Dict[str, Any]:
         """Удаление товара из DBS-кампании (команда /purge). Если ещё не проиндексирован —
         Маркет вернёт notDeleted, повторить позже или удалить в кабинете."""

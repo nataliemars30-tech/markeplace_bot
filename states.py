@@ -21,3 +21,7 @@ class SyncFSM(StatesGroup):
     choosing = State()           # Выбор площадок для копирования (кнопки)
     waiting_size = State()       # Ожидание высоты и размера от флориста
     waiting_categories = State() # Выбор рубрик Tilda (при копировании)
+
+
+class VideoFSM(StatesGroup):
+    waiting_video = State()      # Ожидание видео к существующему товару (/видео)

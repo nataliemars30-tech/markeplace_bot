@@ -37,7 +37,7 @@ from media_processor import mute_video_async, compress_video_async
 from market_api import YandexMarketClient, YandexMarketError
 from eda_csv import EdaCsvManager, build_eda_row
 from tilda_mcp import TildaCatalog
-from states import ProductCreationFSM, HideFSM, SyncFSM
+from states import ProductCreationFSM, HideFSM, SyncFSM, VideoFSM
 from keyboards import get_main_reply_keyboard, TILDA_SECTIONS
 import handlers_menu
 
@@ -659,6 +659,75 @@ async def cmd_fwlist(message: types.Message):
         lines.append(f"<code>{it.get('productId')}</code> · {name} · {it.get('price')}₽")
     lines.append(f"\nКопировать: <code>/sync [номер] [цвет]</code> · страница: /fwlist {page + 2}")
     await status.edit_text("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("видео", "video"))
+async def cmd_video(message: types.Message, state: FSMContext):
+    """Прикрепить видео к уже опубликованному товару.
+    Формат: /видео REN-011-M — бот попросит прислать видео (до 20 МБ, Telegram дальше не пускает)."""
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2 or not re.fullmatch(r"REN(-[A-Z])?-\d{3}(-[A-Z0-9]+)?", parts[1].strip().upper()):
+        await message.reply("Формат: /видео REN-011-M\n"
+                            "После этого пришлите видео одним сообщением (до 20 МБ).")
+        return
+    await state.update_data(video_article=parts[1].strip().upper())
+    await state.set_state(VideoFSM.waiting_video)
+    await message.answer(
+        f"🎬 <b>{parts[1].strip().upper()}</b> — пришлите видео одним сообщением.\n\n"
+        f"Лимит Telegram — 20 МБ. Если больше — сожмите в телефоне (экспорт 720p) и отправьте снова.",
+        parse_mode="HTML")
+
+
+@dp.message(VideoFSM.waiting_video, F.video | F.document)
+async def video_upload(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    article = data.get("video_article")
+    if not article:
+        await state.clear()
+        return
+    doc = message.video or message.document
+    mime = (doc.mime_type or "").lower()
+    fname = (getattr(doc, "file_name", None) or "video.mp4").lower()
+    if "video" not in mime and not fname.endswith((".mp4", ".mov", ".m4v")):
+        await message.reply("Это не похоже на видео. Пришлите видеофайл (mp4/mov) или /отмена.")
+        return
+    if (doc.file_size or 0) > 20 * 1024 * 1024:
+        await message.reply(f"⚠️ Видео {doc.file_size / 1048576:.0f} МБ — Telegram не даёт боту скачать "
+                            f"больше 20 МБ. Сожмите видео (экспорт в 720p) и пришлите снова.")
+        return
+    await state.clear()
+    status = await message.answer("⏳ Скачиваю и сжимаю видео…")
+    work_dir = config.temp_dir / f"video_{article}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    raw_path = work_dir / "raw.mp4"
+    ready_path = work_dir / "ready.mp4"
+    try:
+        file_obj = await bot.get_file(doc.file_id)
+        await bot.download_file(file_obj.file_path, destination=raw_path)
+        await status.edit_text("⏳ Сжимаю видео (H.264, 1080p, без звука)…")
+        compressed = await compress_video_async(raw_path, ready_path)
+        target = ready_path if compressed else raw_path
+        await status.edit_text("⏳ Загружаю на Яндекс Диск…")
+        video_url = await yd_client.upload_file(target, f"/REN_Каталог/Букеты/{article}/video.mp4")
+        await status.edit_text("⏳ Прикрепляю видео к карточке Маркета…")
+        await market_client.add_video(article, video_url)
+        await status.edit_text(
+            f"✅ Видео прикреплено к {article}:\n"
+            f"• Яндекс Диск: /REN_Каталог/Букеты/{article}/video.mp4\n"
+            f"• Маркет: видео отправлено на модерацию (появится в карточке через несколько часов)")
+    except YandexMarketError as e:
+        await status.edit_text(f"⚠️ Видео загружено на Диск, но Маркет не принял: {esc(str(e))[:200]}")
+    except Exception as e:
+        logger.warning(f"Ошибка загрузки видео: {e}")
+        await status.edit_text(f"❌ Не получилось: {esc(str(e))[:200]}")
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@dp.message(VideoFSM.waiting_video, Command("отмена"))
+async def video_cancel(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.reply("❌ Отменено.")
 
 
 @dp.message(Command("reload"))
