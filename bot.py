@@ -436,10 +436,10 @@ async def sync_choose(callback: types.CallbackQuery, state: FSMContext):
         await state.set_state(SyncFSM.waiting_size)
         await callback.message.edit_text(
             "📏 <b>Размер товара</b>\n\n"
-            "Напишите высоту в см и размер одним сообщением, например:\n"
-            "<code>45 M</code> — букет высотой 45 см, размер M\n"
-            "<code>50 L 40</code> — корзина: высота 50 см, размер L, ширина 40 см\n\n"
-            "(ширину указывайте только для корзин/боксов; букеты — всегда 25)",
+            "Напишите <b>длину, ширину</b> (в см) и размер одним сообщением:\n"
+            "<code>50 25 M</code> — длина 50 см, ширина 25 см, размер M\n"
+            "<code>60 40 L</code> — корзина: длина 60 см, ширина 40 см, размер L\n\n"
+            "(длина = высота = длина стеблей; размер: S / M / L)",
             parse_mode="HTML")
         await callback.answer()
         return
@@ -449,23 +449,20 @@ async def sync_choose(callback: types.CallbackQuery, state: FSMContext):
 async def sync_size_entered(message: types.Message, state: FSMContext):
     data = (await state.get_data()).get("sync") or {}
     tokens = (message.text or "").split()
-    height = None
-    width = None
+    dims: List[int] = []
     label = (data.get("label") or "M").upper()
     for t in tokens:
         if t.isdigit():
-            if height is None:
-                height = int(t)
-            elif width is None:
-                width = int(t)
+            dims.append(int(t))
         elif t.upper() in ("S", "M", "L", "XS", "XL"):
             label = t.upper()
-    if not height or not (15 <= height <= 150):
-        await message.reply("Не поняла. Напишите так: <code>45 M</code> или <code>50 L 40</code>",
+    if len(dims) < 2 or not all(15 <= d <= 150 for d in dims[:2]):
+        await message.reply("Нужны <b>длина И ширина</b>. Напишите так: <code>50 25 M</code>",
                             parse_mode="HTML")
         return
+    length_cm, width_cm = dims[0], dims[1]
     selected = set(data.get("selected") or [])
-    data.update({"height_cm": height, "label": label, "width_cm": width or 25})
+    data.update({"height_cm": length_cm, "label": label, "width_cm": width_cm})
     if "Tilda" in selected:
         # вручную выбираем рубрики Tilda (как в мастере создания)
         await state.update_data(sync=data)
@@ -475,7 +472,7 @@ async def sync_size_entered(message: types.Message, state: FSMContext):
                              reply_markup=_sync_cats_keyboard(cats), parse_mode="HTML")
         return
     await state.clear()
-    size_note = f"{height} см, {label}" + (f", ширина {width}" if width else "")
+    size_note = f"длина {length_cm} см, ширина {width_cm} см, {label}"
     status = await message.answer(f"⏳ Копирую {data['article']} ({size_note}) → {', '.join(sorted(selected))}…")
     asyncio.create_task(_run_sync(status, data, selected))
 
@@ -506,7 +503,7 @@ async def sync_cat_toggle(callback: types.CallbackQuery, state: FSMContext):
         selected = set(data.get("selected") or [])
         await state.clear()
         h, lbl = data["height_cm"], data["label"]
-        size_note = f"{h} см, {lbl}" + (f", ширина {data.get('width_cm')}" if data.get("width_cm") != 25 else "")
+        size_note = f"длина {h} см, ширина {data.get('width_cm')} см, {lbl}"
         status = await callback.message.edit_text(
             f"⏳ Копирую {data['article']} ({size_note}) → {', '.join(sorted(selected))}…")
         asyncio.create_task(_run_sync(status, data, selected))
