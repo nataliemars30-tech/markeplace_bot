@@ -30,7 +30,8 @@ from platform_rules import (
     generate_market_seo_description, display_positions, generate_flowwow_title,
     generate_tilda_seo_and_text, build_marketplace_title, clean_position_name
 )
-from seo_generator import generate_description
+from seo_generator import generate_description  # LLM-вариант (отложено); основной текст — description_builder
+from description_builder import generate_marketplace_description
 from sheets_api import GoogleSheetsManager
 from media_processor import mute_video_async, compress_video_async
 from market_api import YandexMarketClient, YandexMarketError
@@ -560,21 +561,22 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
                                        quoted=bool(data.get("fw_quoted")),
                                        limit=150, seo_suffix="— купить с доставкой в СПб")
     # Описание Еды/Tilda: БЕЗ аквабокса (железное правило), с SEO-ключами
-    eda_desc = (f"{noun} от цветочной студии REN, Санкт-Петербург. "
-                f"Состав: {composition_text}. Свежие цветы утренней поставки, кризал в комплекте. "
-                f"Доставка цветов по Санкт-Петербургу.")
+    # Единый конструктор описаний (ТЗ 16.11) — Flowwow/Маркет/Еда; для Tilda не используется
+    market_desc = generate_marketplace_description(
+        bouquet_name, "mono" if market_type == "mono" else "author", color,
+        dpos, packaging_label)
+    eda_desc = market_desc  # обрезка по предложению в build_eda_row (≤900 симв.)
 
     results = [f"Источник: Flowwow «{esc(data['fw_name'])}», {data['fw_price']}₽ → база {base}₽"]
 
     if "Маркет" in selected:
         try:
-            desc = await generate_description(bouquet_name, color, composition_text, packaging_label, "market")
             await market_client.create_card(
                 offer_id=article,
                 name=fw_title,
                 price=prices["yandex_market"],
                 pictures=photos,
-                description=desc,
+                description=market_desc,
                 composition=composition_text,
                 total_flowers=count_stems(dpos),
                 height_cm=height_cm,
@@ -1080,6 +1082,11 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             for p in var.get("positions", [])
         )
         packaging_label = "Пленка" if has_packaging else "Под ленту"
+        # Единый конструктор описаний (ТЗ 16.11): Flowwow, Маркет и Еда — один текст;
+        # для Tilda НЕ используется (там лаконичный формат)
+        market_desc = generate_marketplace_description(
+            name, "mono" if is_mono else "author", color,
+            var.get("positions", []), packaging_label)
         fw_status = "создан"
         fw_id = "—"
         try:
@@ -1091,7 +1098,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 photo_urls=uploaded_photo_urls,
                 consist=consist,
                 composition=composition_text,
-                description=await generate_description(name, color, composition_text, packaging_label, "flowwow"),
+                description=market_desc,
                 production_time=5,
                 width_cm=width_cm,
                 height_cm=var_height,
@@ -1111,7 +1118,6 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         filter_color_vid = market_filter_color_id(color)
         flower_names = [p.get("name", "") for p in dpos]
         weight_g = 1000  # вес для Маркета всегда 1 кг (правило владельца)
-        seo_desc = await generate_description(name, color, composition_text, packaging_label, "market")
         await asyncio.sleep(1)  # дать файлам гарантированно осесть на диск перед скачиванием Маркетом
         try:
             await market_client.create_card(
@@ -1119,7 +1125,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 name=fw_name,
                 price=platform_prices["yandex_market"],
                 pictures=uploaded_photo_urls,
-                description=seo_desc,
+                description=market_desc,
                 composition=composition_text,
                 total_flowers=stem_count,
                 height_cm=var_height,
@@ -1141,11 +1147,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         except YandexMarketError as e:
             market_status = f"ошибка ({e})"
 
-        eda_desc = (
-            f"Букет от цветочной студии REN, Санкт-Петербург. "
-            f"Состав: {composition_text}. Свежие цветы утренней поставки, кризал в комплекте. "
-            f"Доставка цветов по Санкт-Петербургу."
-        )
+        eda_desc = market_desc  # единое описание (ТЗ 16.11), обрезка по предложению в build_eda_row
         eda_row = build_eda_row(
             name=name, variation_label=var["label"], is_mono=is_mono,
             price_eda=platform_prices["yandex_eda"],
