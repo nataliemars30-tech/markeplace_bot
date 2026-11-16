@@ -330,6 +330,8 @@ def _instrumental(flower_name: str) -> str:
             for j in range(i + 1, len(words)):
                 if low[j] in INFLECT_ADJ:
                     words[j] = INFLECT_ADJ[low[j]]
+                elif low[j] in ("кустовая", "кустовой", "пионовидная", "пионовидной", "одноголовая"):
+                    words[j] = low[j]  # видовой эпитет — строчными
                 else:
                     words[j] = words[j].title()  # сортовое имя: 'Франц Мондиаль'
             break
@@ -355,6 +357,9 @@ def build_marketplace_title(bouquet_name: str, color_or_season: str,
     noun: Букет/Корзина/Коробка/Композиция. seo_suffix: для Маркета '— купить с доставкой в СПб'.
     Обрезка строго по границе слова. Если в названии уже есть цветы — список не дублируем."""
     adj = COLOR_ADJECTIVES.get(color_or_season, "авторский")
+    # нормализация: у цветов из меню бота бывают эмодзи («🌸 Розовый»)
+    color_key = re.sub(r"[^А-Яа-яЁёA-Za-z-]", "", str(color_or_season))
+    adj = COLOR_ADJECTIVES.get(color_key, adj)
     name = str(bouquet_name).strip()
     name_low = name.lower()
     if quoted:
@@ -362,12 +367,14 @@ def build_marketplace_title(bouquet_name: str, color_or_season: str,
     else:
         base = f"{noun} {name}"  # старые названия — без прилагательного
     limit_body = limit - len(seo_suffix) - 1 if seo_suffix else limit
-    # если в названии уже есть цветы — не дублируем перечень
+    # если в названии уже есть цветы — не дублируем перечень.
+    # ВАЖНО: 'розовый/розовая' в названии НЕ считается розой (?!\w*ов исключает).
     flower_stems = ("роз", "тюльп", "пион", "гвозд", "хриз", "гортенз", "эустом",
                     "диант", "гербер", "альстр", "маттиол", "гипсоф", "ирис", "калла",
                     "фрез", "лили", "орхид", "георгин", "проте", "анемон", "ранункул",
                     "астр", "нарцисс", "гладиол", "сирен", "мимоз", "лаванд", "амарилл")
-    if any(st in name_low for st in flower_stems):
+    has_flowers = any(re.search(rf"\b{re.escape(st)}(?!ов)", name_low) for st in flower_stems)
+    if has_flowers:
         body = _cut_at_word(base, limit_body)
     else:
         flowers: List[str] = []

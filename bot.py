@@ -1123,6 +1123,9 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             fw_name = generate_flowwow_title(name, is_mono, dpos, var["label"])
         else:
             fw_name = build_marketplace_title(name, color, dpos)
+            # для Маркета — расширенное SEO-название (лимит 256, хвост с гео-ключом)
+            market_name = build_marketplace_title(name, color, dpos, limit=150,
+                                                  seo_suffix="— купить с доставкой в СПб")
         platform_prices = calculate_platform_prices(var["base_price"])
 
         consist = [
@@ -1188,7 +1191,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         try:
             await market_client.create_card(
                 offer_id=full_art,
-                name=fw_name,
+                name=market_name,
                 price=platform_prices["yandex_market"],
                 pictures=uploaded_photo_urls,
                 description=market_desc,
@@ -1207,7 +1210,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 flower_names=flower_names,
                 filter_color_id=filter_color_vid,
                 video_url=video_public_url,
-                width_cm=25
+                width_cm=width_cm
             )
             market_status = "карточка отправлена (обработка)"
         except YandexMarketError as e:
@@ -1227,7 +1230,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         tilda_seo = generate_tilda_seo_and_text(name, dpos)
         tilda_status = await tilda_catalog.create_product(
             project_id=config.tilda_project_id,
-            title=f"{name} {var['label']}",
+            title=f"Букет «{name}» {var['label']}",
             price_tilda=platform_prices["tilda"],
             photo_urls=uploaded_photo_urls,
             tilda_categories=tilda_cats,
