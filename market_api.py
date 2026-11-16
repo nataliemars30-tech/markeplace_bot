@@ -308,6 +308,8 @@ class YandexMarketClient:
             # длина = высота = стебли
             "weightDimensions": {"length": height_cm, "width": width_cm,
                                  "height": height_cm, "weight": weight_kg},
+            # ТН ВЭД — обязательное поле (проверка Маркета); «прочие» по регламенту владельца
+            "tnved": tnved,
             "boxCount": 1,
             # ОКПД2 и срок годности НЕ передаём (решение владельца)
             "manufacturerCountries": ["Россия"],
