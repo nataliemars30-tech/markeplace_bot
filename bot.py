@@ -1202,7 +1202,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             # Сжатие: H.264 до 1080p/CRF28 без звука — обычно в 3-10 раз легче оригинала
             compressed = await compress_video_async(raw_v_path, ready_v_path)
             target_v = ready_v_path if compressed else raw_v_path
-            video_public_url = await yd_client.upload_file(target_v, f"{disk_base_folder}/video_muted.mp4")
+            video_public_url = await yd_client.upload_file(target_v, f"{disk_base_folder}/video_muted.mp4", stable=True)
         except Exception as e:
             logger.warning(f"Видео пропущено (не критично): {e}")
             video_note = (video_note + " " if video_note else "") + f"⚠️ Видео не загружено: {e}"
