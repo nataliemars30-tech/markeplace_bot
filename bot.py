@@ -556,7 +556,10 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
     composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
     fw_title = build_marketplace_title(bouquet_name, color, dpos, noun=noun,
                                        quoted=bool(data.get("fw_quoted")),
-                                       limit=150, seo_suffix="— купить с доставкой в СПб")
+                                       limit=256, seo_suffix="— купить с доставкой в СПб")
+    if len(fw_title) < 75:  # Маркет: название СТРОГО от 75 до 256 символов (18.11)
+        fw_title = (fw_title + " — авторский букет ручной сборки с доставкой "
+                    "по Санкт-Петербургу, свежие цветы")[:256]
     # Описание Еды/Tilda: БЕЗ аквабокса (железное правило), с SEO-ключами
     # Единый конструктор описаний (ТЗ 16.11) — Flowwow/Маркет/Еда; для Tilda не используется
     market_desc = generate_marketplace_description(
@@ -1331,10 +1334,11 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         else:
             fw_name = build_marketplace_title(name, color, dpos)
             # для Маркета — расширенное SEO-название (лимит 256, хвост с гео-ключом)
-            market_name = build_marketplace_title(name, color, dpos, limit=150,
+            market_name = build_marketplace_title(name, color, dpos, limit=256,
                                                   seo_suffix="— купить с доставкой в СПб")
-            if len(market_name) < 32:  # Маркет: баллы за название от 32 символов
-                market_name = f"{market_name} — авторский букет с доставкой по СПб"[:150]
+            if len(market_name) < 75:  # Маркет: название СТРОГО от 75 до 256 символов (18.11)
+                market_name = (market_name + " — авторский букет ручной сборки с доставкой "
+                               "по Санкт-Петербургу, свежие цветы")[:256]
         platform_prices = calculate_platform_prices(var["base_price"])
 
         consist = [

@@ -363,8 +363,12 @@ def _fix_case(words: list) -> str:
     out = [words[0].lower()]
     for w in words[1:]:
         lw = w.lower()
-        if lw in INFLECT_ADJ or lw in INFLECT_ADJ.values() or lw in ("кустовая", "кустовой", "пионовидная", "пионовидной"):
-            out.append(INFLECT_ADJ.get(lw, lw))
+        if lw in INFLECT_ADJ.values():
+            out.append(lw)  # уже просклоняно — не трогаем
+        elif lw in INFLECT_ADJ:
+            out.append(INFLECT_ADJ[lw])
+        elif lw in ("кустовая", "кустовой", "пионовидная", "пионовидной"):
+            out.append(lw)
         else:
             out.append(w.title())
     return " ".join(out)
@@ -418,7 +422,7 @@ def build_marketplace_title(bouquet_name: str, color_or_season: str,
         body = base
         if flowers:
             added = []
-            for fl in flowers[:5]:
+            for fl in flowers[:8]:
                 cand = f"{body}{', ' if added else ' с '}{_instrumental(fl)}"
                 if len(cand) <= limit_body:
                     body = cand
