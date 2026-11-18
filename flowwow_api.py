@@ -116,6 +116,21 @@ class FlowwowClient:
             err_details = res_data.get("errors") or res_data.get("message") or resp.text[:300]
             raise FlowwowAPIError(f"Flowwow не создал товар: {err_details}")
 
+    async def set_top18(self, offer_ids: List[str]) -> Dict[str, Any]:
+        """Замена списка топ-18 витрины. Формат: {"offers": [{"offerId": ...}]}
+        (подтверждено валидацией 18.11). Только товары с offerId!"""
+        url = f"{self.BASE_URL}/products/setTop18?shopId={self.shop_id}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=self._get_headers(),
+                                     json={"offers": [{"offerId": o} for o in offer_ids]})
+        try:
+            data = resp.json()
+        except Exception:
+            raise FlowwowAPIError(f"Flowwow не-JSON [{resp.status_code}]: {resp.text[:200]}")
+        if resp.status_code != 200 or data.get("errors"):
+            raise FlowwowAPIError(f"Flowwow: {json.dumps(data.get('errors'), ensure_ascii=False)[:250]}")
+        return data
+
     async def hide_products(self, offer_ids: List[str]) -> Dict[str, Any]:
         """Массовое скрытие (до 1000). Формат offers: [{\"offerId\": ...}] (18.11, проверено)."""
         url = f"{self.BASE_URL}/products/hide?shopId={self.shop_id}"

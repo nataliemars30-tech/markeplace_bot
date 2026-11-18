@@ -826,6 +826,71 @@ async def cmd_vkl(message: types.Message):
     await status.edit_text(f"👁 Возвращено на витрину: {ok}" + (f" | ошибок: {fail}" if fail else ""))
 
 
+@dp.message(Command("топ18"))
+async def cmd_top18(message: types.Message, state: FSMContext):
+    """Топ-18 витрины Flowwow.
+    /топ18 — показать текущие топовые товары
+    /топ18 REN-019-M REN-011-M ... — заменить список топ-18 (до 18 артикулов)"""
+    parts = (message.text or "").split()
+    status = await message.answer("⏳ Читаю витрину Flowwow…")
+    starred = []
+    for page in range(10):
+        data = await fw_client.list_products(page=page, limit=50)
+        items = data.get("items", [])
+        if not items:
+            break
+        for it in items:
+            if it.get("isStarred"):
+                starred.append({"offerId": it.get("offerId"), "productId": it.get("productId"),
+                                "name": it.get("name"), "price": it.get("price")})
+        if len(items) < 50:
+            break
+    if len(parts) == 1:
+        lines = [f"⭐ <b>Топ-18 витрины Flowwow</b> ({len(starred)} товаров):\n"]
+        for s in starred:
+            oid = s["offerId"] or "—"
+            lines.append(f"• <code>{oid}</code> · {esc(str(s['name'])[:52])} · {s['price']}₽")
+        lines.append("\nЗаменить список: /топ18 REN-019-M REN-011-M …")
+        await status.edit_text("\n".join(lines), parse_mode="HTML")
+        return
+    # установка нового списка
+    arts = [p.upper() for p in parts[1:] if re.fullmatch(r"REN(-[A-Z])?-\d{3}(-[A-Z0-9]+)?", p.upper())]
+    if not arts:
+        await status.edit_text("❌ Нужны артикулы вида REN-011-M")
+        return
+    if len(arts) > 18:
+        arts = arts[:18]
+    await state.update_data(top18=arts)
+    await status.edit_text(
+        f"⭐ Новый топ-18 ({len(arts)} товаров):\n" + "\n".join(f"• <code>{a}</code>" for a in arts) +
+        f"\n\n⚠️ <b>Внимание:</b> текущие топовые товары БЕЗ артикула (старые, созданные до бота) "
+        f"автоматически выпадут из топа — API принимает в топ-18 только товары с offerId. "
+        f"Вернуть их сможете только вручную в кабинете Flowwow.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="⭐ Применить", callback_data="top18:go"),
+            InlineKeyboardButton(text="Отмена", callback_data="top18:cancel"),
+        ]]))
+
+
+@dp.callback_query(F.data.startswith("top18:"))
+async def top18_confirm(callback: types.CallbackQuery, state: FSMContext):
+    arts = (await state.get_data()).get("top18") or []
+    if callback.data == "top18:cancel":
+        await state.clear()
+        await callback.message.edit_text("❌ Отменено.")
+        await callback.answer()
+        return
+    await state.clear()
+    await callback.answer("⏳ Обновляю топ-18…")
+    try:
+        res = await fw_client.set_top18(arts)
+        await callback.message.edit_text(
+            f"⭐ Топ-18 обновлён ({len(arts)} товаров)\n{esc(json.dumps(res.get('data', ''), ensure_ascii=False)[:200])}")
+    except FlowwowAPIError as e:
+        await callback.message.edit_text(f"❌ Flowwow не принял: {esc(str(e))[:200]}")
+
+
 @dp.message(Command("reload"))
 async def cmd_reload_rules(message: types.Message):
     """Перечитать правила из листа «Правила» без перезапуска бота."""
