@@ -141,7 +141,7 @@ async def cmd_start(message: types.Message):
     )
 
 
-@dp.message(Command("new"))
+@dp.message(Command("new", "меню", "menu"))
 async def cmd_new(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Главное меню:", reply_markup=get_main_reply_keyboard())
@@ -824,6 +824,49 @@ async def cmd_vkl(message: types.Message):
         except Exception:
             fail += len(matches[i:i + 1000])
     await status.edit_text(f"👁 Возвращено на витрину: {ok}" + (f" | ошибок: {fail}" if fail else ""))
+
+
+# ------------------ Мониторинг топ-18 витрины Flowwow ------------------
+TOP18_POLL_SECONDS = 1800  # проверка раз в 30 минут
+
+
+async def top18_watchdog():
+    """Следит за топ-18 витрины: <18 товаров или срок изготовления >10 мин — АЛАРМ."""
+    await asyncio.sleep(300)  # дать боту запуститься
+    while True:
+        try:
+            starred = []
+            for page in range(10):
+                data = await fw_client.list_products(page=page, limit=50)
+                items = data.get("items", [])
+                if not items:
+                    break
+                for it in items:
+                    if it.get("isStarred"):
+                        starred.append(it)
+                if len(items) < 50:
+                    break
+            problems = []
+            if len(starred) < 18:
+                problems.append(f"⚠️ <b>В топ-18 всего {len(starred)} товаров</b> (нужно 18) — "
+                                f"выдача витрины проседает! Добавьте товары: /топ18 …")
+            slow = []
+            for it in starred:
+                pt = it.get("productionTime")
+                if pt and int(pt) > 10:
+                    slow.append(f"• {esc(str(it.get('name'))[:50])} — изготовление {pt} мин")
+            if slow:
+                problems.append("⚠️ <b>В топ-18 товары с долгим изготовлением (&gt;10 мин):</b>\n" + "\n".join(slow))
+            if problems:
+                msg = "🚨 <b>Топ-18 Flowwow — проверь!</b>\n\n" + "\n\n".join(problems)
+                for uid in config.allowed_tg_ids:
+                    try:
+                        await bot.send_message(uid, msg, parse_mode="HTML")
+                    except Exception as e:
+                        logger.warning(f"alarм топ-18 {uid}: {e}")
+        except Exception as e:
+            logger.warning(f"top18 watchdog: {e}")
+        await asyncio.sleep(TOP18_POLL_SECONDS)
 
 
 @dp.message(Command("топ18"))
@@ -1537,6 +1580,8 @@ async def main():
         logger.info("Поллер отзывов ВКЛЮЧЁН")
     else:
         logger.info("Поллер отзывов ОТКЛЮЧЁН (REVIEWS_ENABLED=off)")
+    logger.info("Запуск сторожа топ-18...")
+    asyncio.create_task(top18_watchdog())
     logger.info("Запуск бота...")
     await dp.start_polling(bot)
 
