@@ -708,7 +708,7 @@ async def video_upload(message: types.Message, state: FSMContext):
         compressed = await compress_video_async(raw_path, ready_path)
         target = ready_path if compressed else raw_path
         await status.edit_text("⏳ Загружаю на Яндекс Диск…")
-        video_url = await yd_client.upload_file(target, f"/REN_Каталог/Букеты/{article}/video.mp4")
+        video_url = await yd_client.upload_file(target, f"/REN_Каталог/Букеты/{article}/video.mp4", stable=True)
         await status.edit_text("⏳ Прикрепляю видео к карточке Маркета…")
         await market_client.add_video(article, video_url)
         await status.edit_text(
@@ -728,6 +728,102 @@ async def video_upload(message: types.Message, state: FSMContext):
 async def video_cancel(message: types.Message, state: FSMContext):
     await state.clear()
     await message.reply("❌ Отменено.")
+
+
+@dp.message(Command("выкл"))
+async def cmd_vykl(message: types.Message, state: FSMContext):
+    """Массовое скрытие товаров Flowwow с заданным цветком в составе/названии.
+    Формат: /выкл роза  — бот покажет список, вы подтвердите кнопкой."""
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.reply("Формат: /выкл роза\nПокажу все товары Flowwow с этим цветком и скрою по подтверждению.")
+        return
+    flower = parts[1].strip()
+    status = await message.answer(f"⏳ Ищу товары с «{esc(flower)}» на Flowwow…")
+    matches = []
+    for page in range(10):
+        data = await fw_client.list_products(page=page, limit=50)
+        items = data.get("items", [])
+        if not items:
+            break
+        for it in items:
+            if flower.lower() in (it.get("name") or "").lower() and not it.get("isArchived"):
+                matches.append({"offerId": it.get("offerId"), "name": it.get("name"), "price": it.get("price")})
+        if len(items) < 50:
+            break
+    if not matches:
+        await status.edit_text(f"❌ Активных товаров с «{esc(flower)}» не найдено.")
+        return
+    await state.update_data(vykl={"flower": flower, "matches": matches})
+    lines = [f"🔎 Найдено <b>{len(matches)}</b> товаров с «{esc(flower)}»:\n"]
+    for m in matches[:25]:
+        lines.append(f"• <code>{m['offerId']}</code> · {esc(str(m['name'])[:55])} · {m['price']}₽")
+    if len(matches) > 25:
+        lines.append(f"… и ещё {len(matches) - 25}")
+    lines.append("\nСкрыть со всех витрин?")
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🙈 Скрыть все", callback_data="vykl:go"),
+        InlineKeyboardButton(text="Отмена", callback_data="vykl:cancel"),
+    ]])
+    await status.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=kb)
+
+
+@dp.callback_query(F.data.startswith("vykl:"))
+async def vykl_confirm(callback: types.CallbackQuery, state: FSMContext):
+    data = (await state.get_data()).get("vykl") or {}
+    if callback.data == "vykl:cancel":
+        await state.clear()
+        await callback.message.edit_text("❌ Отменено.")
+        await callback.answer()
+        return
+    matches = data.get("matches") or []
+    await state.clear()
+    await callback.answer("⏳ Скрываю…")
+    ok, fail = 0, 0
+    for i in range(0, len(matches), 1000):
+        batch = [m["offerId"] for m in matches[i:i + 1000]]
+        try:
+            await fw_client.hide_products(batch)
+            ok += len(batch)
+        except Exception as e:
+            logger.warning(f"hide batch ошибка: {e}")
+            fail += len(batch)
+    await callback.message.edit_text(
+        f"🙈 Скрыто товаров: {ok}" + (f" | ошибок: {fail}" if fail else "") +
+        f"\n\nВернуть обратно: /вкл {esc(data.get('flower', ''))}")
+
+
+@dp.message(Command("вкл"))
+async def cmd_vkl(message: types.Message):
+    """Возврат товаров Flowwow с заданным цветком на витрину. Формат: /вкл роза"""
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.reply("Формат: /вкл роза")
+        return
+    flower = parts[1].strip()
+    status = await message.answer(f"⏳ Ищу скрытые товары с «{esc(flower)}»…")
+    matches = []
+    for page in range(10):
+        data = await fw_client.list_products(page=page, limit=50)
+        items = data.get("items", [])
+        if not items:
+            break
+        for it in items:
+            if flower.lower() in (it.get("name") or "").lower() and not it.get("isActive"):
+                matches.append(it.get("offerId"))
+        if len(items) < 50:
+            break
+    if not matches:
+        await status.edit_text(f"❌ Скрытых товаров с «{esc(flower)}» не найдено.")
+        return
+    ok, fail = 0, 0
+    for i in range(0, len(matches), 1000):
+        try:
+            await fw_client.unhide_products(matches[i:i + 1000])
+            ok += len(matches[i:i + 1000])
+        except Exception:
+            fail += len(matches[i:i + 1000])
+    await status.edit_text(f"👁 Возвращено на витрину: {ok}" + (f" | ошибок: {fail}" if fail else ""))
 
 
 @dp.message(Command("reload"))
@@ -1129,6 +1225,8 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             # для Маркета — расширенное SEO-название (лимит 256, хвост с гео-ключом)
             market_name = build_marketplace_title(name, color, dpos, limit=150,
                                                   seo_suffix="— купить с доставкой в СПб")
+            if len(market_name) < 32:  # Маркет: баллы за название от 32 символов
+                market_name = f"{market_name} — авторский букет с доставкой по СПб"[:150]
         platform_prices = calculate_platform_prices(var["base_price"])
 
         consist = [
@@ -1233,7 +1331,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         tilda_seo = generate_tilda_seo_and_text(name, dpos)
         tilda_status = await tilda_catalog.create_product(
             project_id=config.tilda_project_id,
-            title=f"Букет «{name}» {var['label']}",
+            title=f"Букет «{name}»"[:190],  # размер в названии Tilda не указываем (18.11)
             price_tilda=platform_prices["tilda"],
             photo_urls=uploaded_photo_urls,
             tilda_categories=tilda_cats,

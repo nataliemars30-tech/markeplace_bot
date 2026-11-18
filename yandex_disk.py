@@ -40,10 +40,11 @@ class YandexDiskClient:
                 if resp.status_code not in (201, 409):
                     logger.warning(f"Ошибка создания папки {current}: {resp.status_code} {resp.text}")
 
-    async def upload_file(self, local_path: Path, disk_path: str) -> str:
+    async def upload_file(self, local_path: Path, disk_path: str, stable: bool = False) -> str:
         """
         Загрузка локального файла на Яндекс Диск, публикация ресурса
         и возврат прямой публичной ссылки на файл.
+        stable=True — вернуть постоянную ссылку disk.yandex.ru (для видео), иначе прямую.
         """
         async with httpx.AsyncClient(timeout=60.0) as client:
             # 1. Запрос URL для загрузки
@@ -88,7 +89,11 @@ class YandexDiskClient:
             if meta_resp.status_code == 200:
                 meta = meta_resp.json()
                 public_url = meta.get("public_url")
-                # Для прямого скачивания/вставки в карточки
+                if stable:
+                    # постоянная ссылка (HTML-страница Диска) — для видео в карточках Маркета,
+                    # где прямая ссылка downloader.disk.yandex.ru протухает через несколько часов
+                    return public_url
+                # Для прямого скачивания/вставки в карточки (фото)
                 file_url = meta.get("file") or public_url
                 return file_url or public_url
 
