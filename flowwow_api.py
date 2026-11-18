@@ -68,9 +68,10 @@ class FlowwowClient:
             "discount": "0",
             "description": description or composition or name,
             "images": photo_urls,
-            # Flowwow (16.11): productionTime и stock ВЗАИМОИСКЛЮЧАЮЩИЕ,
-            # теперь обязателен stock — передаём наличие, а не время изготовления
-            "stock": 1,
+            # Наличие: stock ИЛИ productionTime (взаимоисключающие, обязательно одно).
+            # REN собирает букеты под заказ: «изготовление 1 минута».
+            # measure 7 = МИНУТЫ (9 = дни, проверено 18.11)
+            "productionTime": {"val": 1, "measure": 7},
             "minOrderCount": 1,
             "width": {"val": width_cm, "measure": 3},
             "height": {"val": height_cm, "measure": 3},

@@ -57,7 +57,12 @@
 - Производитель ОБЯЗАТЕЛЕН: manufacturerName «REN, Россия», manufacturerAddress «Россия, Санкт-Петербург»
   (правило владельца; хранится в листе «Правила» → flowwow).
 - Обновление карточек: POST /apiseller/products/update (полные данные, без productType=2).
-- stock и productionTime взаимоисключающие — передаём productionTime.
+- stock ИЛИ productionTime — взаимоисключающие, ОБЯЗАТЕЛЬНО одно. REN: productionTime {1, measure 7}
+  (7 = МИНУТЫ «под заказ», 9 = дни). measure 9 не путать! Частичный update ЗАПРЕЩЁН —
+  обнуляет поля (проверено 18.11): всегда полный набор. Скрытие/открытие: products/hide|unhide
+  {"offers": [{"offerId": ...}]}. Тематические подборки: ВСЕ id [1,32,33,34,39,40,48,53,102,159].
+  manufacturerAddress НЕДОПУСТИМО для букетов. Поля volume/composition/isShopProducedProduct — тоже
+  «недопустимо» для букетов. isActive=False после апдейта — подтвердить наличие в кабинете/приложении.
 - Фото появляются на витрине до 30 минут (асинхронно).
 
 ## Tilda
