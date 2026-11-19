@@ -554,18 +554,22 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
 
     width_cm = int(data.get("width_cm") or 25)
     composition_text = ", ".join(f"{p['name']} — {int(p['qty'])} шт" for p in dpos)
+    # Названия: Flowwow — формула ТЗ; Маркет — официальная схема (тип+производитель+«товар»+состав)
     fw_title = build_marketplace_title(bouquet_name, color, dpos, noun=noun,
                                        quoted=bool(data.get("fw_quoted")),
-                                       limit=256, seo_suffix="— купить с доставкой в СПб")
-    if len(fw_title) < 75:  # Маркет: название СТРОГО от 75 до 256 символов (18.11)
-        fw_title = (fw_title + " — авторский букет ручной сборки с доставкой "
-                    "по Санкт-Петербургу, свежие цветы")[:256]
-    # Описание Еды/Tilda: БЕЗ аквабокса (железное правило), с SEO-ключами
-    # Единый конструктор описаний (ТЗ 16.11) — Flowwow/Маркет/Еда; для Tilda не используется
-    market_desc = generate_marketplace_description(
+                                       limit=100, seo_suffix="— купить с доставкой в СПб")
+    market_title = build_marketplace_title(bouquet_name, color, dpos, noun=noun,
+                                           quoted=bool(data.get("fw_quoted")),
+                                           limit=256, market_style=True,
+                                           size_label="" if market_type == "mono" else label)
+    # Описания: Flowwow/Еда — с эмодзи и гео; Маркет — по официальным правилам (<br>, без эмодзи/региона)
+    fw_desc = generate_marketplace_description(
         bouquet_name, "mono" if market_type == "mono" else "author", color,
         dpos, packaging_label)
-    eda_desc = market_desc  # обрезка по предложению в build_eda_row (≤900 симв.)
+    market_desc = generate_marketplace_description(
+        bouquet_name, "mono" if market_type == "mono" else "author", color,
+        dpos, packaging_label, platform="market")
+    eda_desc = fw_desc  # обрезка по предложению в build_eda_row (≤900 симв.)
 
     results = [f"Источник: Flowwow «{esc(data['fw_name'])}», {data['fw_price']}₽ → база {base}₽"]
 
@@ -1331,14 +1335,13 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         # моно — прежний формат «N название»
         if is_mono:
             fw_name = generate_flowwow_title(name, is_mono, dpos, var["label"])
+            market_name = build_marketplace_title(name, color, dpos, limit=256,
+                                                  market_style=True)
         else:
             fw_name = build_marketplace_title(name, color, dpos)
-            # для Маркета — расширенное SEO-название (лимит 256, хвост с гео-ключом)
+            # Маркет — официальная схема: тип + производитель + «товар» + состав + размер
             market_name = build_marketplace_title(name, color, dpos, limit=256,
-                                                  seo_suffix="— купить с доставкой в СПб")
-            if len(market_name) < 75:  # Маркет: название СТРОГО от 75 до 256 символов (18.11)
-                market_name = (market_name + " — авторский букет ручной сборки с доставкой "
-                               "по Санкт-Петербургу, свежие цветы")[:256]
+                                                  market_style=True, size_label=var["label"])
         platform_prices = calculate_platform_prices(var["base_price"])
 
         consist = [
@@ -1364,11 +1367,14 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             for p in var.get("positions", [])
         )
         packaging_label = "Пленка" if has_packaging else "Под ленту"
-        # Единый конструктор описаний (ТЗ 16.11): Flowwow, Маркет и Еда — один текст;
-        # для Tilda НЕ используется (там лаконичный формат)
-        market_desc = generate_marketplace_description(
+        # Описания: Flowwow/Еда — с эмодзи и гео (ТЗ); Маркет — официальные правила
+        # (<br> для абзацев, БЕЗ эмодзи, региона, доставки — иначе модерация режет)
+        fw_desc = generate_marketplace_description(
             name, "mono" if is_mono else "author", color,
             var.get("positions", []), packaging_label)
+        market_desc = generate_marketplace_description(
+            name, "mono" if is_mono else "author", color,
+            var.get("positions", []), packaging_label, platform="market")
         fw_status = "создан"
         fw_id = "—"
         try:
@@ -1380,7 +1386,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
                 photo_urls=uploaded_photo_urls,
                 consist=consist,
                 composition=composition_text,
-                description=market_desc,
+                description=fw_desc,
                 production_time=5,
                 width_cm=width_cm,
                 height_cm=var_height,
@@ -1429,7 +1435,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         except YandexMarketError as e:
             market_status = f"ошибка ({e})"
 
-        eda_desc = market_desc  # единое описание (ТЗ 16.11), обрезка по предложению в build_eda_row
+        eda_desc = fw_desc  # обрезка по предложению в build_eda_row
         eda_row = build_eda_row(
             name=name, variation_label=var["label"], is_mono=is_mono,
             price_eda=platform_prices["yandex_eda"],

@@ -387,27 +387,35 @@ _cut_tw = _cut_at_word
 def build_marketplace_title(bouquet_name: str, color_or_season: str,
                             dpos: List[Dict[str, Any]], limit: int = 100,
                             noun: str = "Букет", quoted: bool = True,
-                            seo_suffix: str = "") -> str:
-    """Формула ТЗ: [Существительное] [настроение] «[Имя]» с [цветы] [SEO-хвост].
-    noun: Букет/Корзина/Коробка/Композиция. seo_suffix: для Маркета '— купить с доставкой в СПб'.
-    Обрезка строго по границе слова. Если в названии уже есть цветы — список не дублируем."""
-    adj = COLOR_ADJECTIVES.get(color_or_season, "авторский")
-    # нормализация: у цветов из меню бота бывают эмодзи («🌸 Розовый»)
-    color_key = re.sub(r"[^А-Яа-яЁёA-Za-z-]", "", str(color_or_season))
-    adj = COLOR_ADJECTIVES.get(color_key, adj)
+                            seo_suffix: str = "", market_style: bool = False,
+                            size_label: str = "") -> str:
+    """Формула названия.
+    Маркет (market_style=True) — ОФИЦИАЛЬНАЯ схема Маркета: тип + производитель + «товар»
+    + характеристики (состав). БЕЗ «купить», доставки, рекламных призывов (запрещены),
+    БЕЗ эмодзи. Размер — как признак варианта (уникальность названий).
+    Flowwow/Еда — формула ТЗ с прилагательным и гео-хвостом."""
     name = str(bouquet_name).strip()
     name_low = name.lower()
-    if quoted:
-        base = f"{noun} {adj} «{name}»"
+    if market_style:
+        base = f"{noun} REN «{name}»"
+        if size_label:
+            base += f" размер {size_label}"
     else:
-        base = f"{noun} {name}"  # старые названия — без прилагательного
+        adj = COLOR_ADJECTIVES.get(color_or_season, "авторский")
+        color_key = re.sub(r"[^А-Яа-яЁёA-Za-z-]", "", str(color_or_season))
+        adj = COLOR_ADJECTIVES.get(color_key, adj)
+        if quoted:
+            base = f"{noun} {adj} «{name}»"
+        else:
+            base = f"{noun} {name}"  # старые названия — без прилагательного
     limit_body = limit - len(seo_suffix) - 1 if seo_suffix else limit
     # если в названии уже есть цветы — не дублируем перечень.
     # ВАЖНО: 'розовый/розовая' в названии НЕ считается розой (?!\w*ов исключает).
     flower_stems = ("роз", "тюльп", "пион", "гвозд", "хриз", "гортенз", "эустом",
                     "диант", "гербер", "альстр", "маттиол", "гипсоф", "ирис", "калла",
                     "фрез", "лили", "орхид", "георгин", "проте", "анемон", "ранункул",
-                    "астр", "нарцисс", "гладиол", "сирен", "мимоз", "лаванд", "амарилл")
+                    "астр", "нарцисс", "гладиол", "сирен", "мимоз", "лаванд", "амарилл",
+                    "твид", "клемат", "дельфин")
     has_flowers = any(re.search(rf"\b{re.escape(st)}(?!ов)", name_low) for st in flower_stems)
     if has_flowers:
         body = _cut_at_word(base, limit_body)
@@ -432,7 +440,12 @@ def build_marketplace_title(bouquet_name: str, color_or_season: str,
             if not added:
                 body = _cut_at_word(f"{base} с {_instrumental(flowers[0])}", limit_body)
     title = f"{body} {seo_suffix}".strip() if seo_suffix else body
-    return _cut_at_word(title.strip().rstrip(","), limit)
+    result = _cut_at_word(title.strip().rstrip(","), limit)
+    # Маркет: строго 75-256. Если коротко — добавляем допустимые характеристики
+    if market_style and len(result) < 75:
+        result = _cut_at_word(result + " — авторская сборка, свежие цветы утренней поставки, "
+                              "премиум-сорта", limit)
+    return result
 
 
 # ------------------ Очистка названий из МойСклада ------------------
