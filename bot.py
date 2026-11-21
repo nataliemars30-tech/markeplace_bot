@@ -1040,10 +1040,39 @@ async def wizard_video(message: types.Message, state: FSMContext):
                             f"больше 20 МБ. Отправьте как обычное видео (не файлом) — Telegram сожмёт.")
         return
     await state.update_data(video_file_id=message.video.file_id, video_name="video.mp4")
+    data = await state.get_data()
+    if data.get("photo_file_ids") and data.get("name"):
+        # Фото+подпись уже приняты — сразу показываем актуальный промпт с видео
+        await show_publish_prompt(message, state, extra_note="\n\n🎬 Видео добавлено.")
+        return
     await message.answer(
         "🎬 Видео принято!\n\nТеперь пришлите <b>6 фото одним сообщением с подписью</b> по шаблону.\n"
         "Если фото уже отправляли — пришлите подпись отдельным сообщением.",
         parse_mode="HTML", reply_markup=get_main_reply_keyboard())
+
+
+@dp.message(ProductCreationFSM.waiting_for_upload, F.text)
+async def wizard_caption_text(message: types.Message, state: FSMContext):
+    """Подпись отдельным текстовым сообщением (после фото/видео) — обновляем параметры товара."""
+    fsm_data = await state.get_data()
+    if not fsm_data.get("photo_file_ids"):
+        await message.answer(
+            "Сначала пришлите <b>6 фото одним сообщением с подписью</b> по шаблону, "
+            "видео — следующим сообщением (опционально).",
+            parse_mode="HTML", reply_markup=get_main_reply_keyboard())
+        return
+    product_name, variations, height_cm, err = parse_caption(message.text, fsm_data)
+    if err:
+        await message.reply(err, parse_mode="HTML")
+        return
+    if fsm_data.get("product_type") != "mono" and any(v.get("order_no") for v in variations):
+        status_msg = await message.reply("⏳ Запрашиваю данные из МойСклада...")
+        err = await resolve_moysklad_orders(variations, status_msg)
+        if err:
+            await status_msg.edit_text(err, parse_mode="HTML")
+            return
+    await state.update_data(name=product_name, variations=variations, height_cm=height_cm)
+    await show_publish_prompt(message, state, extra_note="\n\n✏️ Параметры обновлены из подписи.")
 
 
 @dp.message(ProductCreationFSM.waiting_for_upload, F.document)
@@ -1073,6 +1102,71 @@ def extract_caption(messages: List[types.Message]) -> str:
         if m.text and m.text.strip():
             return m.text.strip()
     return ""
+
+
+def parse_caption(caption: str, fsm_data: Dict[str, Any]):
+    """Парсинг подписи по типу товара. Возвращает (product_name, variations, height_cm, error_text)."""
+    p_type = fsm_data.get("product_type")
+    if p_type == "mono":
+        parsed = parse_mono_caption(caption, fsm_data.get("flower_type", "Цветы"))
+        if not parsed:
+            return None, None, 0, (
+                "⚠️ Не разобрала подпись. Формат:\n"
+                "<code>Сорт / Цена за стебель / Штуки / Высота</code>\n"
+                "Пример: <code>Охара / 350 / 9, 15, 25, 51 / 50</code>")
+        product_name, variations, height_cm = parsed
+        return product_name, variations, height_cm, ""
+    parsed = parse_author_caption(caption, fsm_data.get("sizes_mode", "single"))
+    if not parsed:
+        return None, None, 0, (
+            "⚠️ Не разобрала подпись. Форматы:\n"
+            "<code>Название / M / 567 / 45*35</code>\n"
+            "или <code>Название / S заказ 150, M заказ 151</code>")
+    product_name, variations = parsed
+    return product_name, variations, 0, ""
+
+
+async def resolve_moysklad_orders(variations: List[Dict[str, Any]], notify) -> Optional[str]:
+    """Разрешение заказов МойСклад для авторских вариаций. Возвращает текст ошибки или None."""
+    if not variations:
+        return None
+    try:
+        for var in variations:
+            order_no = var.get("order_no", "")
+            if not order_no:
+                continue
+            order_data = await ms_client.get_customer_order_details(order_no)
+            sell = order_data["selling_sum"]
+            cost = order_data["cost_price"]
+            var["positions"] = order_data["positions"]
+            var["base_price"] = var.get("entered_price") or sell
+            var["cost_price"] = cost
+            var["margin_percent"] = calculate_margin(var["base_price"], cost) if cost else 0.0
+    except MoySkladAuthError as e:
+        return f"❌ <b>Ошибка авторизации МойСклад:</b>\n{e}"
+    except MoySkladAPIError as e:
+        return f"❌ <b>Ошибка МойСклад:</b>\n{e}"
+    return None
+
+
+async def show_publish_prompt(target, state: FSMContext, extra_note: str = ""):
+    """Промпт публикации по данным FSM (после фото/видео/подписи)."""
+    data = await state.get_data()
+    variations = data.get("variations") or []
+    sizes_preview = ", ".join(v["label"] for v in variations)
+    has_video = bool(data.get("video_file_id"))
+    n_photos = len(data.get("photo_file_ids") or [])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🚀 Опубликовать", callback_data="wizard:publish"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="wizard:cancel")
+    ]])
+    await target.answer(
+        f"📸 Фото: {n_photos} (+ {'видео' if has_video else 'без видео'})\n"
+        f"Товар: <b>{esc(data.get('name', ''))}</b> · размеры: {esc(sizes_preview)}\n\n"
+        f"Опубликовать на Flowwow, Маркете, в CSV Еды, на Диске и в таблице?"
+        + (f"\n\n{data.get('video_note')}" if data.get("video_note") else "")
+        + extra_note,
+        reply_markup=kb, parse_mode="HTML")
 
 
 async def process_incoming_files(messages: List[types.Message], state: FSMContext):
@@ -1105,53 +1199,17 @@ async def process_incoming_files(messages: List[types.Message], state: FSMContex
         return
 
     caption = extract_caption(messages)
-    p_type = fsm_data.get("product_type")
-
-    # --- Парсинг подписи ---
-    if p_type == "mono":
-        parsed = parse_mono_caption(caption, fsm_data.get("flower_type", "Цветы"))
-        if not parsed:
-            await messages[0].reply(
-                "⚠️ Не разобрала подпись. Формат:\n"
-                "<code>Сорт / Цена за стебель / Штуки / Высота</code>\n"
-                "Пример: <code>Охара / 350 / 9, 15, 25, 51 / 50</code>",
-                parse_mode="HTML"
-            )
-            return
-        product_name, variations, height_cm = parsed
-    else:
-        parsed = parse_author_caption(caption, fsm_data.get("sizes_mode", "single"))
-        if not parsed:
-            await messages[0].reply(
-                "⚠️ Не разобрала подпись. Форматы:\n"
-                "<code>Название / M / 567 / 45*35</code>\n"
-                "или <code>Название / S заказ 150, M заказ 151</code>",
-                parse_mode="HTML"
-            )
-            return
-        product_name, variations = parsed
-        height_cm = 0
+    product_name, variations, height_cm, err = parse_caption(caption, fsm_data)
+    if err:
+        await messages[0].reply(err, parse_mode="HTML")
+        return
 
     # --- Разрешение заказов МойСклад (авторские) ---
-    if p_type != "mono":
+    if fsm_data.get("product_type") != "mono":
         status_msg = await messages[0].reply("⏳ Запрашиваю данные из МойСклада...")
-        try:
-            for var in variations:
-                order_no = var.get("order_no", "")
-                if not order_no:
-                    continue
-                order_data = await ms_client.get_customer_order_details(order_no)
-                sell = order_data["selling_sum"]
-                cost = order_data["cost_price"]
-                var["positions"] = order_data["positions"]
-                var["base_price"] = var.get("entered_price") or sell
-                var["cost_price"] = cost
-                var["margin_percent"] = calculate_margin(var["base_price"], cost) if cost else 0.0
-        except MoySkladAuthError as e:
-            await status_msg.edit_text(f"❌ <b>Ошибка авторизации МойСклад:</b>\n{e}", parse_mode="HTML")
-            return
-        except MoySkladAPIError as e:
-            await status_msg.edit_text(f"❌ <b>Ошибка МойСклад:</b>\n{e}", parse_mode="HTML")
+        err = await resolve_moysklad_orders(variations, status_msg)
+        if err:
+            await status_msg.edit_text(err, parse_mode="HTML")
             return
 
     # Видео из пачки файлов; если его нет — сохраняем уже принятое через wizard_video,
@@ -1170,25 +1228,13 @@ async def process_incoming_files(messages: List[types.Message], state: FSMContex
     )
 
     # Лимит Telegram Bot API: скачивание файлов > 20 МБ недоступно
-    fsm_data = await state.get_data()
     video_note = ""
     if video_doc and (video_doc.file_size or 0) > 20 * 1024 * 1024:
         video_note = (f"⚠️ Видео ({video_doc.file_size / 1048576:.0f} МБ) пропущено: лимит Telegram 20 МБ. "
                       "Сожмите видео или загрузите на Диск вручную.")
     await state.update_data(video_note=video_note)
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🚀 Опубликовать", callback_data="wizard:publish"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data="wizard:cancel")
-    ]])
-    sizes_preview = ", ".join(v["label"] for v in variations)
-    await messages[0].reply(
-        f"📸 Фото: {len(photo_docs)} (+ {'видео' if (video_doc or fsm_data.get('video_file_id')) else 'без видео'})\n"
-        f"Товар: <b>{esc(product_name)}</b> · размеры: {esc(sizes_preview)}\n\n"
-        f"Опубликовать на Flowwow, Маркете, в CSV Еды, на Диске и в таблице?"
-        + (f"\n\n{video_note}" if video_note else ""),
-        reply_markup=kb, parse_mode="HTML"
-    )
+    await show_publish_prompt(messages[0], state)
 
 
 def parse_mono_caption(caption: str, flower_raw: str):
