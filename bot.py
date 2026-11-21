@@ -1031,6 +1031,21 @@ async def hide_by_article(message: types.Message, state: FSMContext):
 
 
 # ------------------ Приём файлов и подписи ------------------
+@dp.message(ProductCreationFSM.waiting_for_upload, F.video)
+async def wizard_video(message: types.Message, state: FSMContext):
+    """Видео присылается ОТДЕЛЬНЫМ сообщением сразу после фото (Telegram сжимает его сам).
+    Сохраняем в то же состояние — дальше стандартный конвейер подхватит."""
+    if (message.video.file_size or 0) > 20 * 1024 * 1024:
+        await message.reply(f"⚠️ Видео {message.video.file_size / 1048576:.0f} МБ — бот не может скачать "
+                            f"больше 20 МБ. Отправьте как обычное видео (не файлом) — Telegram сожмёт.")
+        return
+    await state.update_data(video_file_id=message.video.file_id, video_name="video.mp4")
+    await message.answer(
+        "🎬 Видео принято!\n\nТеперь пришлите <b>6 фото одним сообщением с подписью</b> по шаблону.\n"
+        "Если фото уже отправляли — пришлите подпись отдельным сообщением.",
+        parse_mode="HTML", reply_markup=get_main_reply_keyboard())
+
+
 @dp.message(ProductCreationFSM.waiting_for_upload, F.document)
 @dp.message(F.document)
 async def handle_document_upload(message: types.Message, state: FSMContext):
@@ -1139,13 +1154,18 @@ async def process_incoming_files(messages: List[types.Message], state: FSMContex
             await status_msg.edit_text(f"❌ <b>Ошибка МойСклад:</b>\n{e}", parse_mode="HTML")
             return
 
+    # Видео из пачки файлов; если его нет — сохраняем уже принятое через wizard_video,
+    # чтобы очередная пачка фото не затирала видео.
+    video_file_id = video_doc.file_id if video_doc else fsm_data.get("video_file_id")
+    video_name = video_doc.file_name if video_doc else fsm_data.get("video_name")
+
     await state.update_data(
         name=product_name,
         variations=variations,
         photo_file_ids=[d.file_id for d in photo_docs],
         photo_names=[d.file_name for d in photo_docs],
-        video_file_id=video_doc.file_id if video_doc else None,
-        video_name=video_doc.file_name if video_doc else None,
+        video_file_id=video_file_id,
+        video_name=video_name,
         height_cm=height_cm,
     )
 
@@ -1163,7 +1183,7 @@ async def process_incoming_files(messages: List[types.Message], state: FSMContex
     ]])
     sizes_preview = ", ".join(v["label"] for v in variations)
     await messages[0].reply(
-        f"📸 Фото: {len(photo_docs)} (+ {'видео' if video_doc else 'без видео'})\n"
+        f"📸 Фото: {len(photo_docs)} (+ {'видео' if (video_doc or fsm_data.get('video_file_id')) else 'без видео'})\n"
         f"Товар: <b>{esc(product_name)}</b> · размеры: {esc(sizes_preview)}\n\n"
         f"Опубликовать на Flowwow, Маркете, в CSV Еды, на Диске и в таблице?"
         + (f"\n\n{video_note}" if video_note else ""),
