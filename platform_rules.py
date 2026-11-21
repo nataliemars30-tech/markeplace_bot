@@ -340,8 +340,12 @@ def _instrumental(flower_name: str) -> str:
             for j in range(i + 1, len(words)):
                 if low[j] in INFLECT_ADJ:
                     words[j] = INFLECT_ADJ[low[j]]
-                elif low[j] in ("кустовая", "кустовой", "пионовидная", "пионовидной", "одноголовая"):
-                    words[j] = low[j]  # видовой эпитет — строчными
+                elif low[j] in ("кустовая", "кустовой"):
+                    words[j] = "кустовой"
+                elif low[j] in ("пионовидная", "пионовидной"):
+                    words[j] = "пионовидной"
+                elif low[j] in ("одноголовая", "одноголовой"):
+                    words[j] = "одноголовой"
                 else:
                     words[j] = words[j].title()  # сортовое имя: 'Франц Мондиаль'
             break
