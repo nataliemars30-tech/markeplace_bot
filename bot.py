@@ -569,7 +569,7 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
     market_desc = generate_marketplace_description(
         bouquet_name, "mono" if market_type == "mono" else "author", color,
         dpos, packaging_label, platform="market")
-    eda_desc = fw_desc  # обрезка по предложению в build_eda_row (≤900 симв.)
+    eda_desc = fw_desc  # полное описание, обрезка по предложению в build_eda_row (≤3000 симв.)
 
     results = [f"Источник: Flowwow «{esc(data['fw_name'])}», {data['fw_price']}₽ → база {base}₽"]
 
@@ -1455,7 +1455,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         except YandexMarketError as e:
             market_status = f"ошибка ({e})"
 
-        eda_desc = fw_desc  # обрезка по предложению в build_eda_row
+        eda_desc = fw_desc  # полное описание, обрезка по предложению в build_eda_row (≤3000 симв.)
         eda_row = build_eda_row(
             name=name, variation_label=var["label"], is_mono=is_mono,
             price_eda=platform_prices["yandex_eda"],

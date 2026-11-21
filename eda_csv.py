@@ -102,7 +102,7 @@ def build_eda_row(*, name: str, variation_label: str, is_mono: bool,
         title, "",                             # 7-8: название, id позиции (новая)
         str(weight), "г", "",                  # 9-11: вес
         str(price_eda),                        # 12: цена
-        description[:900].rsplit(". ", 1)[0] + "." if len(description) > 900 else description[:900],  # 13: описание
+        description[:3000].rsplit(". ", 1)[0] + "." if len(description) > 3000 else description,  # 13: описание (полный текст; лимита ЛК нет)
         "REN", "Россия",                       # 14-15
         "", PLACES, "",                        # 16-18: штрихкоды, магазины, акциза
         ",".join(picture_urls[:10]),           # 19: все фото через запятую
