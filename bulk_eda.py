@@ -160,6 +160,35 @@ def fetch_all_active(token, shop_id):
 MONO_RX = re.compile(r"моно", re.I)
 QTY_RX = re.compile(r"\b(\d{1,3})\s*(?:шт|тюльпан|роз|гвоздик|хризантем|пион|эустом|ранункул|альстр|гербер)")
 
+# Родительный падеж мн.ч. для названий монобукетов («Букет из 25 …»)
+PLURAL_GEN = {
+    "Роза одноголовая": "роз", "Роза кустовая": "кустовых роз",
+    "Роза пионовидная": "пионовидных роз", "Роза французская": "французских роз",
+    "Хризантема": "хризантем", "Хризантема кустовая": "кустовых хризантем",
+    "Хризантема одноголовая": "хризантем", "Тюльпан": "тюльпанов",
+    "Гвоздика": "гвоздик", "Пион": "пионов", "Гортензия": "гортензий",
+    "Лизиантус": "эустом", "Маттиола": "маттиол", "Ранункулюс": "ранункулюсов",
+    "Анемон": "анемон", "Альстромерия": "альстромерий", "Гербера": "герб",
+    "Ирис": "ирисов", "Калла": "калл", "Лилия": "лилий", "Нарцисс": "нарциссов",
+    "Фрезия": "фрезий", "Гиацинт": "гиацинтов", "Орхидея": "орхидей",
+    "Подсолнух": "подсолнухов", "Гладиолус": "гладиолусов", "Астра": "астр",
+    "Георгин": "георгин", "Мимоза": "веток мимозы", "Лаванда": "веточек лаванды",
+    "Орнитогалум": "орнитогалумов", "Незабудка": "незабудок", "Твидия": "твидий",
+    "Оксипеталум": "оксипеталумов", "Нерине": "нерине", "Ромашка": "ромашек",
+    "Лютик": "лютиков", "Амариллис": "амариллисов", "Амарилис": "амариллисов",
+    "Мускари": "мускари", "Подснежник": "подснежников", "Ландыш": "ландышей",
+}
+
+
+def mono_title(qty: int, comp: str, orig_name: str) -> str:
+    """«Букет из 25 роз»; для компонентов без формы мн.ч. — исходное название."""
+    pg = PLURAL_GEN.get(comp)
+    if not pg and len(comp.split()) == 1:
+        pg = _plural_gen(comp)
+    if pg:
+        return f"Букет из {qty} {pg}"[:100]
+    return orig_name[:100]
+
 
 def build_row(item):
     """Одна строка CSV из карточки Flowwow. None — если пропускаем."""
@@ -207,16 +236,17 @@ def build_row(item):
     if not dpos:
         return None, "не удалось определить состав (нет цветов из справочника Еды)"
 
-    # Моно: слово «моно» в названии или один вид цветов в составе
-    is_mono = bool(MONO_RX.search(name)) or (len(dpos) == 1)
-    if is_mono:
+    # Категория и название
+    total_qty = sum(q for _, q in dpos)
+    if len(dpos) == 1 and total_qty == 1 and not MONO_RX.search(name):
+        # одна ветка — это «Цветы поштучно», название оставляем исходное
+        cat = "Цветы поштучно"
+        title = name[:100]
+        width, height = 10, 45
+    elif bool(MONO_RX.search(name)) or len(dpos) == 1:
         cat = "Монобукеты"
-        qty = sum(q for _, q in dpos) if dpos else 0
-        if not qty:
-            m_q = QTY_RX.search(name.lower())
-            qty = int(m_q.group(1)) if m_q else 1
-        flower = dpos[0][0].split()[0] if dpos else name[:40]
-        title = f"Букет из {qty} {_plural_gen(flower)}"[:100]
+        qty = total_qty or 1
+        title = mono_title(qty, dpos[0][0], name)
         width, height = 25, 45
     else:
         cat = "Авторские букеты"
@@ -256,13 +286,30 @@ def main():
         else:
             skipped.append((it.get("productId"), (it.get("name") or "")[:60], why))
 
+    # Дедупликация названий: импортер отклоняет файл, если позиция с таким
+    # названием уже встречалась (проверено 24.11 — «уже существует в строке N»)
+    used = {}
+    dups = 0
+    for r in rows:
+        title = r[6]
+        if title in used:
+            used[title] += 1
+            dups += 1
+            r[6] = f"{title[:92]} №{used[title]}"
+        else:
+            used[title] = 1
+    if dups:
+        print(f"переименовано дубликатов названий: {dups}")
+
     with open(out, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f, delimiter=",")
         w.writerow(TEMPLATE_HEADERS)
         w.writerows(rows)
 
     mono = sum(1 for r in rows if r[0] == "Монобукеты")
-    print(f"OK: {out} — строк: {len(rows)} (моно {mono}, авторские {len(rows) - mono}), пропущено: {len(skipped)}")
+    sht = sum(1 for r in rows if r[0] == "Цветы поштучно")
+    print(f"OK: {out} — строк: {len(rows)} (моно {mono}, поштучно {sht}, "
+          f"авторские {len(rows) - mono - sht}), пропущено: {len(skipped)}")
     for pid, nm, why in skipped[:20]:
         print(f"  пропуск {pid}: {nm} ({why})")
 
