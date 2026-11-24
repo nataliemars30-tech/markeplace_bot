@@ -279,8 +279,9 @@ def build_row(item):
         width, height = 10, 45
     elif bool(MONO_RX.search(name)) or len(dpos) == 1:
         cat = "Монобукеты"
-        qty = total_qty or 1
-        title = mono_title(qty, dpos[0][0], name)
+        # название — исходное с Flowwow (там есть сорт и количество);
+        # генерация «Букет из N роз» теряла сорт и плодила «№2» (замечание владельца 24.11)
+        title = name[:100]
         width, height = 25, 45
     else:
         cat = "Авторские букеты"
@@ -361,7 +362,7 @@ def main():
             test5_titles = {l.strip() for l in f if l.strip()}
     except FileNotFoundError:
         pass
-    excl_titles, excl_pairs = load_exclusions()  # test5 тоже отклонён модерацией — включаем всё заново
+    excl_titles, excl_pairs = set(), set()  # обновление по id: исключения не нужны, всё правим на месте
     kept = []
     for r in rows:
         t = r[6]
