@@ -269,6 +269,35 @@ def build_row(item):
             consist_str], ""
 
 
+def load_exclusions(path="eda_railway_ref.csv", extra_titles=()):
+    """Что уже загружено на Еду: история импортов бота (ref CSV) + ранее принятые файлы.
+    Возвращает (точные названия, пары (имя в «кавычках», размер))."""
+    titles, pairs = set(extra_titles), set()
+    try:
+        with open(path, encoding="utf-8-sig", newline="") as f:
+            ref = list(csv.reader(f, delimiter=";"))
+    except FileNotFoundError:
+        return titles, pairs
+    for r in ref[1:]:
+        t = (r[6] if len(r) > 6 else "").strip()
+        if not t:
+            continue
+        titles.add(t)
+        m = re.search(r"«([^»]+)»\s*([A-Za-z])?", t)
+        if m:
+            pairs.add((m.group(1).strip().lower(), (m.group(2) or "").upper()))
+    return titles, pairs
+
+
+def row_pair(title):
+    """('имя в кавычках', размер) из названия строки — для сверки с каталогом Еды."""
+    m = re.search(r"«([^»]+)»", title)
+    if not m:
+        return None
+    s = re.search(r"»\s*(?:размер\s+)?([SML])\b", title)
+    return (m.group(1).strip().lower(), s.group(1) if s else "")
+
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "eda_bulk.csv"
     sec = load_secrets()
@@ -285,6 +314,25 @@ def main():
             rows.append(row)
         else:
             skipped.append((it.get("productId"), (it.get("name") or "")[:60], why))
+
+    # Исключаем то, что УЖЕ на Еде: история импортов бота + тестовая пятёрка
+    # (eda_test5.csv пользователь уже загрузила — конфликт «уже существует в категории»)
+    test5_titles = set()
+    try:
+        with open("eda_test5_titles.txt", encoding="utf-8") as f:
+            test5_titles = {l.strip() for l in f if l.strip()}
+    except FileNotFoundError:
+        pass
+    excl_titles, excl_pairs = load_exclusions(extra_titles=test5_titles)
+    kept = []
+    for r in rows:
+        t = r[6]
+        pair = row_pair(t)
+        if t in excl_titles or (pair and pair in excl_pairs):
+            skipped.append(("", t[:60], "уже есть на Еде — исключён"))
+            continue
+        kept.append(r)
+    rows = kept
 
     # Дедупликация названий: импортер отклоняет файл, если позиция с таким
     # названием уже встречалась (проверено 24.11 — «уже существует в строке N»)
