@@ -215,7 +215,7 @@ class YandexMarketClient:
         diameter_cm: int = 30,
         height_pack_cm: int = 45,
         okpd2: str = "01.19.21.190",
-        tnved: str = "0603197000",
+        tnved: str = "0201100008",
         packaging: str = "Пленка",
         color_value_id: Optional[int] = None,
         bouquet_type: str = "author",
@@ -308,10 +308,9 @@ class YandexMarketClient:
             # длина = высота = стебли
             "weightDimensions": {"length": height_cm, "width": width_cm,
                                  "height": height_cm, "weight": weight_kg},
-            # ТН ВЭД через API НЕ выставляется (проверено тестовой карточкой 18.11:
-            # Маркет игнорирует поле tnved в offer-mappings, ошибку снимает только
-            # ручной выбор «прочие» в редакторе кабинета) — tnved в сигнатуре сохранён
-            # для совместимости, но в оффер НЕ пишем.
+            # ТН ВЭД «прочие» — ставим через commodityCodes (проверено 24.11: поле
+            # записывается и снимает ошибку модерации; старое поле tnved API игнорирует)
+            "commodityCodes": [{"code": tnved, "type": "CUSTOMS_COMMODITY_CODE"}],
             "boxCount": 1,
             # ОКПД2 и срок годности НЕ передаём (решение владельца)
             "manufacturerCountries": ["Россия"],
