@@ -190,6 +190,40 @@ def mono_title(qty: int, comp: str, orig_name: str) -> str:
     return orig_name[:100]
 
 
+# ------------------ Очистка под модерацию Яндекс Еды (24.11: все товары отклонены) ------------------
+# Модерация Еды запрещает: упоминание услуг вне сервиса (самовывоз, фото перед отправкой),
+# стоимость/скидки/акции, время и стоимость доставки.
+EDA_FOOTER_MARKERS = ("REN - азиатская эстетика", "REN – азиатская", "REN — азиатская",
+                      "Почему клиенты выбирают нашу студию", "Добавьте нас в избранное")
+EDA_BANNED = ("бесплатн", "самовывоз", "доставк", "стоимост", "скидк", "акци", "избранн",
+              "выгодн", "компенсац", "минут", "часов", "открытк", "подкормк", "фото букета",
+              "подарок", "цене", "цену", "цены")
+EMOJI_RX = re.compile("[\U0001F000-\U0001FAFF☀-➿⬀-⯿️←-⇿⌀-⏿\U0001F1E6-\U0001F1FF\u200d]")
+
+
+def clean_eda_description(desc: str, title: str) -> str:
+    d = desc or ""
+    for m in EDA_FOOTER_MARKERS:
+        i = d.find(m)
+        if i > 0:
+            d = d[:i]
+    parts = re.split(r"(?<=[.!?])\s+|\n+", d)
+    keep = []
+    for s in parts:
+        s = EMOJI_RX.sub("", s).strip()
+        if s and not any(b in s.lower() for b in EDA_BANNED):
+            keep.append(s)
+    out = "\n\n".join(keep).strip()
+    if len(out) < 100:
+        out = (f"{title} от цветочной студии REN. Авторская флористика в азиатской эстетике: "
+               f"свежие цветы утренней поставки, бережная сборка и фирменная упаковка.")
+    return out[:3000]
+
+
+def clean_eda_title(t: str) -> str:
+    return re.sub(r"\s{2,}", " ", EMOJI_RX.sub("", t or "")).strip(" ,-–—")
+
+
 def build_row(item):
     """Одна строка CSV из карточки Flowwow. None — если пропускаем."""
     name = (item.get("name") or "").strip()
@@ -255,11 +289,15 @@ def build_row(item):
 
     consist_str = ",".join(f"{n[:1].upper() + n[1:]}:{q}" for n, q in dpos)
 
+    # модерация Еды: чистим название от эмодзи, описание — от услуг/цен/доставки
+    title = clean_eda_title(title)
+    desc = clean_eda_description(desc, title)
+
     return [cat, CAT_IDS[cat], "", "", "", "",
             title, "",
             "1000", "г", "",
             str(eda_price),
-            desc[:3000].rsplit(". ", 1)[0] + "." if len(desc) > 3000 else desc,
+            desc,
             "REN", "Россия",
             "", PLACES, "",
             ",".join(images),
@@ -323,7 +361,7 @@ def main():
             test5_titles = {l.strip() for l in f if l.strip()}
     except FileNotFoundError:
         pass
-    excl_titles, excl_pairs = load_exclusions(extra_titles=test5_titles)
+    excl_titles, excl_pairs = load_exclusions()  # test5 тоже отклонён модерацией — включаем всё заново
     kept = []
     for r in rows:
         t = r[6]

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Подключить магазины · Флаувау Селлер</title>
+  <link rel="stylesheet" href="/static/auth.css">
+</head>
+<body>
+  <header><a class="brand" href="/">Флаувау Селлер</a><a href="/connections">Подключения</a></header>
+  <main id="main">
+<p class="eyebrow">MCP для продавцов</p>
+<h1>Подключить магазины</h1>
+<p class="lead">Введите Seller API-токен, чтобы проверить доступ и выбрать магазины для ИИ-клиента.</p>
+<section class="card">
+  <form action="/connect" method="post">
+    <input type="hidden" name="csrf" value="e9244c649255996d9e44a0ea1d15572968f358114eb0d00a1f525ea5e2d811ed">
+    <input type="hidden" name="request_id" value="FUN16G748uuVG4PI1HEGWcWNEh2R5sJJ">
+    <label for="api-token">Seller API-токен</label>
+    <input id="api-token" name="api_token" type="password" required maxlength="4096" autocomplete="off" spellcheck="false" aria-describedby="token-help">
+    <p id="token-help" class="muted">Токен хранится на сервере в зашифрованном виде. ИИ-клиент получит отдельный доступ, который можно отозвать.</p>
+    <button type="submit">Проверить магазины</button>
+  </form>
+</section>
+<p class="muted">Сейчас выполняется только проверка доступа. Данные товаров не изменятся.</p>
+</main>
+  <aside class="cookie-note" aria-label="Использование cookie">Для входа и защиты подключения используются необходимые cookie.</aside>
+  
+</body>
+</html>
