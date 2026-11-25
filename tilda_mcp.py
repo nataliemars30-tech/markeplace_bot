@@ -217,6 +217,7 @@ class TildaCatalog:
         import re as _re
         import subprocess
         import tempfile
+        from media_processor import ensure_jpeg
         cdn = []
         for u in photo_urls or []:
             try:
