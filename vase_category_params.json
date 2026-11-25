@@ -1,0 +1,940 @@
+[
+ {
+  "id": 13887626,
+  "name": "Цвет для фильтра",
+  "type": "ENUM",
+  "required": false,
+  "unit": null,
+  "values": [
+   {
+    "id": 13887677,
+    "name": null
+   },
+   {
+    "id": 13887686,
+    "name": null
+   },
+   {
+    "id": 17584838,
+    "name": null
+   },
+   {
+    "id": 13887703,
+    "name": null
+   },
+   {
+    "id": 13891805,
+    "name": null
+   },
+   {
+    "id": 13891809,
+    "name": null
+   },
+   {
+    "id": 13891828,
+    "name": null
+   },
+   {
+    "id": 13891836,
+    "name": null
+   },
+   {
+    "id": 13891866,
+    "name": null
+   },
+   {
+    "id": 13891871,
+    "name": null
+   },
+   {
+    "id": 13891903,
+    "name": null
+   },
+   {
+    "id": 13898623,
+    "name": null
+   },
+   {
+    "id": 13898641,
+    "name": null
+   },
+   {
+    "id": 13898977,
+    "name": null
+   },
+   {
+    "id": 13898990,
+    "name": null
+   },
+   {
+    "id": 13899071,
+    "name": null
+   }
+  ]
+ },
+ {
+  "id": 14805336,
+  "name": "Высота",
+  "type": "NUMERIC",
+  "required": false,
+  "unit": {
+   "defaultUnitId": 8,
+   "units": [
+    {
+     "id": 12325084,
+     "name": "нм",
+     "fullName": "нм"
+    },
+    {
+     "id": 14744433,
+     "name": "морск.мил.",
+     "fullName": "морская миля"
+    },
+    {
+     "id": 6,
+     "name": "м",
+     "fullName": "метр"
+    },
+    {
+     "id": 7,
+     "name": "км",
+     "fullName": "километр"
+    },
+    {
+     "id": 8,
+     "name": "см",
+     "fullName": "сантиметр"
+    },
+    {
+     "id": 16805288,
+     "name": "мил",
+     "fullName": "мил"
+    },
+    {
+     "id": 12325073,
+     "name": "мкм",
+     "fullName": "мкм"
+    },
+    {
+     "id": 6145200,
+     "name": "мм",
+     "fullName": "миллиметр"
+    },
+    {
+     "id": 13851454,
+     "name": "ярд",
+     "fullName": "ярд"
+    },
+    {
+     "id": 6145203,
+     "name": "\"",
+     "fullName": "дюйм"
+    },
+    {
+     "id": 12909803,
+     "name": "ft",
+     "fullName": "фут"
+    },
+    {
+     "id": 6145202,
+     "name": "дм",
+     "fullName": "дециметр"
+    }
+   ]
+  },
+  "values": []
+ },
+ {
+  "id": 23681530,
+  "name": "Диаметр/ширина",
+  "type": "NUMERIC",
+  "required": false,
+  "unit": {
+   "defaultUnitId": 8,
+   "units": [
+    {
+     "id": 12325084,
+     "name": "нм",
+     "fullName": "нм"
+    },
+    {
+     "id": 14744433,
+     "name": "морск.мил.",
+     "fullName": "морская миля"
+    },
+    {
+     "id": 6,
+     "name": "м",
+     "fullName": "метр"
+    },
+    {
+     "id": 7,
+     "name": "км",
+     "fullName": "километр"
+    },
+    {
+     "id": 8,
+     "name": "см",
+     "fullName": "сантиметр"
+    },
+    {
+     "id": 16805288,
+     "name": "мил",
+     "fullName": "мил"
+    },
+    {
+     "id": 12325073,
+     "name": "мкм",
+     "fullName": "мкм"
+    },
+    {
+     "id": 6145200,
+     "name": "мм",
+     "fullName": "миллиметр"
+    },
+    {
+     "id": 13851454,
+     "name": "ярд",
+     "fullName": "ярд"
+    },
+    {
+     "id": 6145203,
+     "name": "\"",
+     "fullName": "дюйм"
+    },
+    {
+     "id": 12909803,
+     "name": "ft",
+     "fullName": "фут"
+    },
+    {
+     "id": 6145202,
+     "name": "дм",
+     "fullName": "дециметр"
+    }
+   ]
+  },
+  "values": []
+ },
+ {
+  "id": 21194330,
+  "name": "Тип",
+  "type": "ENUM",
+  "required": false,
+  "unit": null,
+  "values": [
+   {
+    "id": 34057974,
+    "name": null
+   },
+   {
+    "id": 34068364,
+    "name": null
+   },
+   {
+    "id": 34061561,
+    "name": null
+   },
+   {
+    "id": 54298051,
+    "name": null
+   },
+   {
+    "id": 34068410,
+    "name": null
+   },
+   {
+    "id": 34057136,
+    "name": null
+   }
+  ]
+ },
+ {
+  "id": 27142752,
+  "name": "Размещение",
+  "type": "ENUM",
+  "required": false,
+  "unit": null,
+  "values": [
+   {
+    "id": 28737733,
+    "name": null
+   },
+   {
+    "id": 28737693,
+    "name": null
+   },
+   {
+    "id": 28737672,
+    "name": null
+   }
+  ]
+ },
+ {
+  "id": 17352854,
+  "name": "Материал",
+  "type": "ENUM",
+  "required": false,
+  "unit": null,
+  "values": [
+   {
+    "id": 36718170,
+    "name": null
+   },
+   {
+    "id": 29146570,
+    "name": null
+   },
+   {
+    "id": 29146492,
+    "name": null
+   },
+   {
+    "id": 29595390,
+    "name": null
+   },
+   {
+    "id": 36091516,
+    "name": null
+   },
+   {
+    "id": 30288205,
+    "name": null
+   },
+   {
+    "id": 29595430,
+    "name": null
+   },
+   {
+    "id": 17352863,
+    "name": null
+   },
+   {
+    "id": 41282930,
+    "name": null
+   },
+   {
+    "id": 30288194,
+    "name": null
+   },
+   {
+    "id": 41283670,
+    "name": null
+   },
+   {
+    "id": 17362342,
+    "name": null
+   },
+   {
+    "id": 41282810,
+    "name": null
+   },
+   {
+    "id": 30288200,
+    "name": null
+   },
+   {
+    "id": 41282990,
+    "name": null
+   },
+   {
+    "id": 17352860,
+    "name": null
+   },
+   {
+    "id": 41283650,
+    "name": null
+   },
+   {
+    "id": 29146513,
+    "name": null
+   },
+   {
+    "id": 36092370,
+    "name": null
+   },
+   {
+    "id": 41283690,
+    "name": null
+   },
+   {
+    "id": 17352865,
+    "name": null
+   },
+   {
+    "id": 37087710,
+    "name": null
+   },
+   {
+    "id": 36091668,
+    "name": null
+   },
+   {
+    "id": 41283750,
+    "name": null
+   },
+   {
+    "id": 30288183,
+    "name": null
+   },
+   {
+    "id": 17362341,
+    "name": null
+   },
+   {
+    "id": 17362559,
+    "name": null
+   },
+   {
+    "id": 25831190,
+    "name": null
+   },
+   {
+    "id": 41282550,
+    "name": null
+   },
+   {
+    "id": 25831230,
+    "name": null
+   },
+   {
+    "id": 36091555,
+    "name": null
+   },
+   {
+    "id": 36091426,
+    "name": null
+   }
+  ]
+ },
+ {
+  "id": 27140831,
+  "name": "Особенности",
+  "type": "ENUM",
+  "required": false,
+  "unit": null,
+  "values": [
+   {
+    "id": 36541830,
+    "name": null
+   },
+   {
+    "id": 51284025,
+    "name": null
+   },
+   {
+    "id": 45183452,
+    "name": null
+   },
+   {
+    "id": 38427454,
+    "name": null
+   },
+   {
+    "id": 38912150,
+    "name": null
+   }
+  ]
+ },
+ {
+  "id": 12782797,
+  "name": "Линейка",
+  "type": "ENUM",
+  "required": false,
+  "unit": null,
+  "values": [
+   {
+    "id": 21501731,
+    "name": null
+   },
+   {
+    "id": 26211491,
+    "name": null
+   },
+   {
+    "id": 21501710,
+    "name": null
+   },
+   {
+    "id": 21501730,
+    "name": null
+   },
+   {
+    "id": 21501670,
+    "name": null
+   },
+   {
+    "id": 21516972,
+    "name": null
+   },
+   {
+    "id": 29327375,
+    "name": null
+   },
+   {
+    "id": 22382513,
+    "name": null
+   },
+   {
+    "id": 28098590,
+    "name": null
+   },
+   {
+    "id": 29601490,
+    "name": null
+   },
+   {
+    "id": 53340117,
+    "name": null
+   },
+   {
+    "id": 18264310,
+    "name": null
+   },
+   {
+    "id": 27474350,
+    "name": null
+   },
+   {
+    "id": 27474370,
+    "name": null
+   },
+   {
+    "id": 22062290,
+    "name": null
+   },
+   {
+    "id": 19378030,
+    "name": null
+   },
+   {
+    "id": 27474390,
+    "name": null
+   },
+   {
+    "id": 29601491,
+    "name": null
+   },
+   {
+    "id": 27474150,
+    "name": null
+   },
+   {
+    "id": 18178870,
+    "name": null
+   },
+   {
+    "id": 27474393,
+    "name": null
+   },
+   {
+    "id": 27474331,
+    "name": null
+   },
+   {
+    "id": 22350647,
+    "name": null
+   },
+   {
+    "id": 20476250,
+    "name": null
+   },
+   {
+    "id": 44510790,
+    "name": null
+   },
+   {
+    "id": 16794827,
+    "name": null
+   },
+   {
+    "id": 13732059,
+    "name": null
+   },
+   {
+    "id": 51050148,
+    "name": null
+   },
+   {
+    "id": 13729543,
+    "name": null
+   },
+   {
+    "id": 16112713,
+    "name": null
+   },
+   {
+    "id": 14354422,
+    "name": null
+   },
+   {
+    "id": 14354423,
+    "name": null
+   },
+   {
+    "id": 37927130,
+    "name": null
+   },
+   {
+    "id": 54935624,
+    "name": null
+   },
+   {
+    "id": 28931291,
+    "name": null
+   },
+   {
+    "id": 73096347,
+    "name": null
+   },
+   {
+    "id": 28816821,
+    "name": null
+   },
+   {
+    "id": 13731427,
+    "name": null
+   },
+   {
+    "id": 14354425,
+    "name": null
+   },
+   {
+    "id": 54487141,
+    "name": null
+   }
+  ]
+ },
+ {
+  "id": 7351754,
+  "name": "Дополнительная информация",
+  "type": "TEXT",
+  "required": false,
+  "unit": null,
+  "values": []
+ },
+ {
+  "id": 14871214,
+  "name": "Название цвета от производителя",
+  "type": "ENUM",
+  "required": false,
+  "unit": null,
+  "values": [
+   {
+    "id": 28044090,
+    "name": null
+   },
+   {
+    "id": 15304259,
+    "name": null
+   },
+   {
+    "id": 14898225,
+    "name": null
+   },
+   {
+    "id": 14899366,
+    "name": null
+   },
+   {
+    "id": 14898220,
+    "name": null
+   },
+   {
+    "id": 24701176,
+    "name": null
+   },
+   {
+    "id": 14896151,
+    "name": null
+   },
+   {
+    "id": 15104847,
+    "name": null
+   },
+   {
+    "id": 16419732,
+    "name": null
+   },
+   {
+    "id": 14897014,
+    "name": null
+   },
+   {
+    "id": 15270397,
+    "name": null
+   },
+   {
+    "id": 14897060,
+    "name": null
+   },
+   {
+    "id": 14898432,
+    "name": null
+   },
+   {
+    "id": 15845946,
+    "name": null
+   },
+   {
+    "id": 16825168,
+    "name": null
+   },
+   {
+    "id": 14896128,
+    "name": null
+   },
+   {
+    "id": 14896669,
+    "name": null
+   },
+   {
+    "id": 50015409,
+    "name": null
+   },
+   {
+    "id": 14898236,
+    "name": null
+   },
+   {
+    "id": 14898203,
+    "name": null
+   },
+   {
+    "id": 14898303,
+    "name": null
+   },
+   {
+    "id": 15121084,
+    "name": null
+   },
+   {
+    "id": 14898310,
+    "name": null
+   },
+   {
+    "id": 14896796,
+    "name": null
+   },
+   {
+    "id": 14896717,
+    "name": null
+   },
+   {
+    "id": 14897976,
+    "name": null
+   },
+   {
+    "id": 14899531,
+    "name": null
+   },
+   {
+    "id": 15827213,
+    "name": null
+   },
+   {
+    "id": 14896950,
+    "name": null
+   },
+   {
+    "id": 14899383,
+    "name": null
+   },
+   {
+    "id": 14898486,
+    "name": null
+   },
+   {
+    "id": 14896599,
+    "name": null
+   },
+   {
+    "id": 15144484,
+    "name": null
+   },
+   {
+    "id": 24677810,
+    "name": null
+   },
+   {
+    "id": 14897297,
+    "name": null
+   },
+   {
+    "id": 16583690,
+    "name": null
+   },
+   {
+    "id": 14898650,
+    "name": null
+   },
+   {
+    "id": 15879060,
+    "name": null
+   },
+   {
+    "id": 14896314,
+    "name": null
+   },
+   {
+    "id": 15119264,
+    "name": null
+   }
+  ]
+ },
+ {
+  "id": 23674510,
+  "name": "Вес",
+  "type": "NUMERIC",
+  "required": false,
+  "unit": {
+   "defaultUnitId": 6146430,
+   "units": [
+    {
+     "id": 6146429,
+     "name": "г",
+     "fullName": "грамм"
+    },
+    {
+     "id": 14806768,
+     "name": "oz",
+     "fullName": "унция"
+    },
+    {
+     "id": 6374304,
+     "name": "lb",
+     "fullName": "lb"
+    },
+    {
+     "id": 6146431,
+     "name": "ц",
+     "fullName": "центнер"
+    },
+    {
+     "id": 6146430,
+     "name": "кг",
+     "fullName": "килограмм"
+    },
+    {
+     "id": 22403238,
+     "name": "карат",
+     "fullName": "карат"
+    },
+    {
+     "id": 16042527,
+     "name": "фунт",
+     "fullName": "фунт"
+    },
+    {
+     "id": 6146433,
+     "name": "мг",
+     "fullName": "миллиграмм"
+    },
+    {
+     "id": 6146432,
+     "name": "т",
+     "fullName": "тонна"
+    }
+   ]
+  },
+  "values": []
+ },
+ {
+  "id": 14805583,
+  "name": "Единиц в одной упаковке",
+  "type": "NUMERIC",
+  "required": false,
+  "unit": {
+   "defaultUnitId": 6145205,
+   "units": [
+    {
+     "id": 14808977,
+     "name": "кадров",
+     "fullName": "кадров"
+    },
+    {
+     "id": 93404273,
+     "name": "подимпульсов",
+     "fullName": "подимпульсов"
+    },
+    {
+     "id": 17471055,
+     "name": "модулей",
+     "fullName": "модулей"
+    },
+    {
+     "id": 6145205,
+     "name": "шт",
+     "fullName": "штук"
+    },
+    {
+     "id": 17850828,
+     "name": "знач.",
+     "fullName": "значений"
+    }
+   ]
+  },
+  "values": []
+ },
+ {
+  "id": 33663230,
+  "name": "Количество упаковок в товаре",
+  "type": "NUMERIC",
+  "required": false,
+  "unit": {
+   "defaultUnitId": 6145205,
+   "units": [
+    {
+     "id": 14808977,
+     "name": "кадров",
+     "fullName": "кадров"
+    },
+    {
+     "id": 93404273,
+     "name": "подимпульсов",
+     "fullName": "подимпульсов"
+    },
+    {
+     "id": 17471055,
+     "name": "модулей",
+     "fullName": "модулей"
+    },
+    {
+     "id": 6145205,
+     "name": "шт",
+     "fullName": "штук"
+    },
+    {
+     "id": 17850828,
+     "name": "знач.",
+     "fullName": "значений"
+    }
+   ]
+  },
+  "values": []
+ },
+ {
+  "id": 57046341,
+  "name": "Прочие характеристики",
+  "type": "TEXT",
+  "required": false,
+  "unit": null,
+  "values": []
+ },
+ {
+  "id": 40164890,
+  "name": "Изображение для миниатюры",
+  "type": "TEXT",
+  "required": false,
+  "unit": null,
+  "values": []
+ },
+ {
+  "id": 200,
+  "name": "Название группы вариантов",
+  "type": "TEXT",
+  "required": false,
+  "unit": null,
+  "values": []
+ }
+]
