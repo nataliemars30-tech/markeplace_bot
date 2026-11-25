@@ -55,12 +55,14 @@ def main():
             err += 1
             time.sleep(2)
             continue
-        # подтверждаем
-        proposal_id = prep.get("proposal_id") or prep.get("id") or (prep.get("proposal") or {}).get("id")
-        args = {"proposal_id": proposal_id} if proposal_id else {"change": {"operation": "map_offer",
-                "shop_id": M.SHOP_ID, "offers": [{"offerId": oid, "productId": pid}]}}
+        # подтверждаем по change_id (формат MCP: prepare -> change_id, apply -> confirmed)
+        cid = prep.get("change_id") or (prep.get("proposal") or {}).get("change_id")
+        if not cid:
+            print("NO CHANGE_ID", pid, str(prep)[:150], flush=True)
+            err += 1
+            continue
         while True:
-            appl = M.call_tool("apply_product_change", args, rid=200 + i)
+            appl = M.call_tool("apply_product_change", {"change_id": cid, "confirmed": True}, rid=200 + i)
             txt = appl.get("text") or json.dumps(appl, ensure_ascii=False)
             m = re.search(r'"retry_after":\s*"?(\d+)', txt)
             if m:
