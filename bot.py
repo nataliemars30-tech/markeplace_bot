@@ -1676,6 +1676,128 @@ async def global_error_handler(event: types.ErrorEvent):
 
 
 # ------------------ Точка входа ------------------
+# ------------------ Еженедельный отчёт по каналам ------------------
+def _delta(cur, prev, unit=""):
+    if prev == 0:
+        return f"{cur}{unit} (было 0)"
+    pct = (cur - prev) / prev * 100
+    arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "=")
+    return f"{cur}{unit} ({arrow}{abs(pct):.0f}% к прошлой неделе)"
+
+
+async def build_weekly_report() -> str:
+    """Сводка за 7 дней против предыдущих 7: Flowwow + Маркет. Правила-выводы."""
+    import datetime as _dt
+    lines = ["📊 <b>Еженедельный отчёт REN</b>", ""]
+    now = _dt.datetime.now()
+    week_ago = now - _dt.timedelta(days=7)
+    two_weeks_ago = now - _dt.timedelta(days=14)
+    findings = []
+
+    # --- Flowwow ---
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient(timeout=30) as cl:
+            r = await cl.get(f"https://apis.flowwow.com/apiseller/orders/list?shopId={config.flowwow_shop_id}&limit=100",
+                             headers={"Authorization": f"Bearer {config.flowwow_token}"})
+            orders = r.json().get("items") or []
+        cur = [o for o in orders if o.get("createdDate") and
+               _dt.datetime.fromtimestamp(int(o["createdDate"])) >= week_ago]
+        prev = [o for o in orders if o.get("createdDate") and
+                two_weeks_ago <= _dt.datetime.fromtimestamp(int(o["createdDate"])) < week_ago]
+        cur_sum = sum(float(o.get("price") or 0) for o in cur)
+        prev_sum = sum(float(o.get("price") or 0) for o in prev)
+        lines.append(f"<b>Flowwow</b>: заказов {_delta(len(cur), len(prev))}, "
+                     f"выручка {_delta(int(cur_sum), int(prev_sum), ' ₽')}")
+        if len(cur) < len(prev) and len(prev) >= 3:
+            findings.append("Заказов на Flowwow стало меньше — проверьте топ-18 (алёрты выше) "
+                            "и долю товаров с изготовлением >1 мин.")
+        # активные товары
+        act, starred = 0, 0
+        for page in range(10):
+            d = await fw_client.list_products(page=page, limit=50)
+            its = d.get("items", [])
+            if not its:
+                break
+            act += sum(1 for x in its if x.get("isActive"))
+            starred += sum(1 for x in its if x.get("isStarred"))
+            if len(its) < 50:
+                break
+        lines.append(f"· активных товаров: {act}, в топ-18: {starred}")
+        if starred < 18:
+            findings.append(f"Топ-18 неполный ({starred}/18) — витрина проседает, флористу дополнить.")
+    except Exception as e:
+        lines.append(f"<b>Flowwow</b>: ошибка сбора ({esc(str(e))[:60]})")
+
+    # --- Яндекс Маркет ---
+    try:
+        import httpx as _hx
+        H = {"Api-Key": config.yandex_market_api_key, "Content-Type": "application/json"}
+        async with _hx.AsyncClient(timeout=30) as cl:
+            cnt = {}
+            for label, dfrom in (("cur", week_ago), ("prev", two_weeks_ago)):
+                dto = now if label == "cur" else week_ago
+                r = await cl.get(
+                    f"https://api.partner.market.yandex.ru/v2/campaigns/149020930/orders",
+                    headers=H, params={"fromDate": dfrom.strftime("%d-%m-%Y"),
+                                       "toDate": dto.strftime("%d-%m-%Y"), "page_size": 1})
+                cnt[label] = (r.json().get("pager") or {}).get("total") or 0
+            r = await cl.post("https://api.partner.market.yandex.ru/v2/businesses/216468683/offer-cards",
+                              headers=H, json={"limit": 100})
+            cards = (r.json().get("result") or {}).get("offerCards") or []
+        with_err = sum(1 for c in cards if c.get("errors"))
+        lines.append(f"<b>Яндекс Маркет</b>: заказов {_delta(cnt['cur'], cnt['prev'])}, "
+                     f"карточек с ошибками: {with_err}")
+        if cnt["cur"] == 0:
+            findings.append("На Маркете 0 заказов — проверьте Буст продаж (ставка 7%) и остатки.")
+        if with_err:
+            findings.append(f"Маркет: {with_err} карточек с ошибками (обычно ТН ВЭД) — товары скрыты.")
+    except Exception as e:
+        lines.append(f"<b>Яндекс Маркет</b>: ошибка сбора ({esc(str(e))[:60]})")
+
+    lines.append("")
+    lines.append("<b>Выводы недели:</b>")
+    if findings:
+        lines += [f"• {f}" for f in findings]
+    else:
+        lines.append("• Критичных отклонений нет, держим курс.")
+    lines.append("\n<i>Еда и Яндекс Бизнес — без API: пришлите скрины статистики, добавлю в разбор.</i>")
+    return "\n".join(lines)
+
+
+async def weekly_report_task():
+    """Каждый понедельник 10:00 по СПб (07:00 UTC) — отчёт в Telegram."""
+    import datetime as _dt
+    await asyncio.sleep(120)
+    while True:
+        now = _dt.datetime.utcnow()
+        days_ahead = (0 - now.weekday()) % 7  # понедельник
+        target = (now + _dt.timedelta(days=days_ahead)).replace(hour=7, minute=0, second=0, microsecond=0)
+        if target <= now:
+            target += _dt.timedelta(days=7)
+        await asyncio.sleep((target - now).total_seconds())
+        try:
+            report = await build_weekly_report()
+            for uid in config.allowed_tg_ids:
+                try:
+                    await bot.send_message(uid, report, parse_mode="HTML")
+                except Exception as e:
+                    logger.warning(f"weekly report {uid}: {e}")
+        except Exception as e:
+            logger.warning(f"weekly_report_task: {e}")
+
+
+@dp.message(Command("отчет", "отчёт", "report"))
+async def cmd_weekly_report(message: types.Message):
+    """Собрать еженедельный отчёт прямо сейчас."""
+    status = await message.answer("⏳ Собираю отчёт по каналам...")
+    try:
+        report = await build_weekly_report()
+        await status.edit_text(report, parse_mode="HTML")
+    except Exception as e:
+        await status.edit_text(f"❌ Не смог собрать отчёт: {esc(str(e))[:200]}", parse_mode="HTML")
+
+
 async def main():
     logger.info("Инициализация локальной базы SQLite...")
     init_db()
@@ -1694,6 +1816,8 @@ async def main():
         logger.info("Поллер отзывов ОТКЛЮЧЁН (REVIEWS_ENABLED=off)")
     logger.info("Запуск сторожа топ-18...")
     asyncio.create_task(top18_watchdog())
+    logger.info("Запуск еженедельного отчёта (пн 10:00 СПб)...")
+    asyncio.create_task(weekly_report_task())
     logger.info("Запуск бота...")
     await dp.start_polling(bot)
 
