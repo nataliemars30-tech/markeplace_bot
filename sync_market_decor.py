@@ -106,6 +106,9 @@ def build_offer(fw: dict) -> dict:
         "basicPrice": {"value": price, "currencyId": "RUR"},
         "weightDimensions": {"length": h, "width": w, "height": h, "weight": 1.0},
         "boxCount": 1,
+        # ТН ВЭД обязателен для новых карточек (25.11): стекло 7013990000, керамика/фарфор 6913100000
+        "commodityCodes": [{"code": "6913100000" if material == "керамика" else "7013990000",
+                            "type": "CUSTOMS_COMMODITY_CODE"}],
         "manufacturerCountries": ["Россия"],
         "vendorCode": f"VASE-{fw['id']}",
         "parameterValues": params,

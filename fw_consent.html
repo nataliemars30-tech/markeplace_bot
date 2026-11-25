@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Разрешить подключение · Флаувау Селлер</title>
+  <link rel="stylesheet" href="/static/auth.css">
+</head>
+<body>
+  <header><a class="brand" href="/">Флаувау Селлер</a><a href="/connections">Подключения</a></header>
+  <main id="main">
+<p class="eyebrow">Настройка доступа</p>
+<h1>Выберите магазины</h1>
+<p class="lead">Клиент «kimi-code (flowwow)» запрашивает доступ к вашим магазинам.</p>
+<p class="muted">Название указано самим клиентом. После подтверждения вы вернетесь по адресу: <span class="address">http://127.0.0.1:41523/callback</span></p>
+<form action="/consent" method="post" class="card">
+  <input type="hidden" name="csrf" value="9c39d2e6406ac7fe68bf077e8261b334ad245420b3c7ee8a0a9468028f11dc85">
+  <input type="hidden" name="request_id" value="IQmIv0f_Wuin1P1e7OgubaM75_AVfsP_">
+  <fieldset><legend>Доступные магазины</legend>
+    <label class="choice"><input type="checkbox" name="shop_ids" value="222976"><span>REN<small>ID 222976</small></span></label>
+  </fieldset>
+  <fieldset><legend>Что сможет делать клиент</legend>
+    <p>Просматривать товары, остатки, цены и данные заказов без контактов покупателей.</p>
+    <label class="choice"><input type="checkbox" name="write" value="yes"><span>Разрешить изменение товаров<small>Создание и редактирование карточек, цены, остатки, фотографии, видимость и архив.</small></span></label>
+    <label class="choice"><input type="checkbox" name="orders_write" value="yes"><span>Разрешить изменение статусов заказов<small>Принятие, передача в доставку, готовность к самовывозу, сборка почтовых заказов и завершение заказов.</small></span></label>
+    <label class="choice"><input type="checkbox" name="reviews_write" value="yes"><span>Ответы на отзывы<small>Публикация и замена ваших ответов. Тексты и контакты покупателей агенту не передаются.</small></span></label><label class="choice"><input type="checkbox" name="certificates_write" value="yes"><span>Управление сертификатами<small>Шаблоны, коды активации и создание публичного PDF из всего текста шаблона.</small></span></label><label class="choice"><input type="checkbox" name="fulfillment_write" value="yes"><span>Дополнительные действия с заказами<small>Отказ от заказа, загрузка фото и добавление или изменение кодов маркировки.</small></span></label><label class="choice"><input type="checkbox" name="integrations_write" value="yes"><span>Проверка вебхука всего холдинга<small>Отправка тестового события на настроенный адрес интеграции. Действует на весь холдинг этого токена, а не только на выбранные магазины.</small></span></label>
+    <p class="muted">Перед изменениями агенту нужно показать предложение и запросить ваше подтверждение. Проверяйте магазин и новые значения.</p>
+  </fieldset>
+  
+  <div class="actions"><button name="decision" value="allow">Разрешить доступ</button><button class="secondary" name="decision" value="deny" formnovalidate>Отказать</button></div>
+</form>
+<p class="muted">Отозвать доступ можно на странице «Подключения».</p>
+</main>
+  <aside class="cookie-note" aria-label="Использование cookie">Для входа и защиты подключения используются необходимые cookie.</aside>
+  
+</body>
+</html>

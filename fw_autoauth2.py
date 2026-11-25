@@ -117,7 +117,8 @@ if "code" not in captured:
     print("КОД НЕ ПОЛУЧЕН", flush=True); raise SystemExit(1)
 r = req(lambda: httpx.post(BASE + "/token", data={
     "grant_type": "authorization_code", "code": captured["code"][0],
-    "redirect_uri": redirect, "client_id": client_id, "code_verifier": verifier}, timeout=30))
+    "redirect_uri": redirect, "client_id": client_id, "code_verifier": verifier,
+    "resource": BASE + "/mcp"}, timeout=30))
 tok = r.json()
 open("fw_mcp_tokens.json", "w", encoding="utf-8").write(json.dumps(tok, ensure_ascii=False, indent=1))
 print("TOKEN OK, expires_in:", tok.get("expires_in"), flush=True)
