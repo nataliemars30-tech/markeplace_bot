@@ -835,10 +835,31 @@ async def cmd_vkl(message: types.Message):
 
 # ------------------ Мониторинг топ-18 витрины Flowwow ------------------
 TOP18_POLL_SECONDS = 1800  # проверка раз в 30 минут
+_last_top18_alarm = ""     # хэш последнего аларма — не спамим одним и тем же
+
+
+def _prodtime_bad(pt) -> str:
+    """'' если срок ок; описание проблемы, если плохо.
+    0 = «в наличии» (ок), 1 = 1 минута (ок), 2-9 = ДНИ (плохо!), >10 = минуты (>10 мин — плохо)."""
+    if pt is None:
+        return ""
+    try:
+        v = int(pt)
+    except (TypeError, ValueError):
+        return ""
+    if v in (0, 1):
+        return ""
+    if 2 <= v <= 9:
+        return f"{v} дн."
+    if v > 10:
+        return f"{v} мин" if v < 600 else f"{v // 60 // 24} дн."
+    return ""
 
 
 async def top18_watchdog():
-    """Следит за топ-18 витрины: <18 товаров или срок изготовления >10 мин — АЛАРМ."""
+    """Следит за топ-18 витрины. ТОЛЬКО уведомляет — правит флорист вручную.
+    Алармы: <18 товаров; долгий срок изготовления; <5 фото; нет описания."""
+    global _last_top18_alarm
     await asyncio.sleep(300)  # дать боту запуститься
     while True:
         try:
@@ -856,21 +877,36 @@ async def top18_watchdog():
             problems = []
             if len(starred) < 18:
                 problems.append(f"⚠️ <b>В топ-18 всего {len(starred)} товаров</b> (нужно 18) — "
-                                f"выдача витрины проседает! Добавьте товары: /топ18 …")
-            slow = []
+                                f"выдача витрины проседает! Флористу: добавить товары в топ в кабинете.")
+            slow, few_photo, no_desc = [], [], []
             for it in starred:
-                pt = it.get("productionTime")
-                if pt and int(pt) > 10:
-                    slow.append(f"• {esc(str(it.get('name'))[:50])} — изготовление {pt} мин")
+                nm = esc(str(it.get("name"))[:45])
+                bad = _prodtime_bad(it.get("productionTime"))
+                if bad:
+                    slow.append(f"• {nm} — {bad}")
+                if len(it.get("images") or []) < 5:
+                    few_photo.append(f"• {nm} — {len(it.get('images') or [])} фото")
+                if not (it.get("description") or "").strip():
+                    no_desc.append(f"• {nm}")
             if slow:
-                problems.append("⚠️ <b>В топ-18 товары с долгим изготовлением (&gt;10 мин):</b>\n" + "\n".join(slow))
+                problems.append("⚠️ <b>В топ-18 долгое изготовление:</b>\n" + "\n".join(slow)
+                                + "\nФлористу: поставить «1 минута» или убрать из топа.")
+            if few_photo:
+                problems.append("📷 <b>В топ-18 мало фото (&lt;5):</b>\n" + "\n".join(few_photo))
+            if no_desc:
+                problems.append("📝 <b>В топ-18 без описания:</b>\n" + "\n".join(no_desc))
             if problems:
                 msg = "🚨 <b>Топ-18 Flowwow — проверь!</b>\n\n" + "\n\n".join(problems)
-                for uid in config.allowed_tg_ids:
-                    try:
-                        await bot.send_message(uid, msg, parse_mode="HTML")
-                    except Exception as e:
-                        logger.warning(f"alarм топ-18 {uid}: {e}")
+                signature = str(hash(msg))
+                if signature != _last_top18_alarm:  # не дублируем один и тот же аларм каждые 30 мин
+                    _last_top18_alarm = signature
+                    for uid in config.allowed_tg_ids:
+                        try:
+                            await bot.send_message(uid, msg, parse_mode="HTML")
+                        except Exception as e:
+                            logger.warning(f"alarм топ-18 {uid}: {e}")
+            else:
+                _last_top18_alarm = ""
         except Exception as e:
             logger.warning(f"top18 watchdog: {e}")
         await asyncio.sleep(TOP18_POLL_SECONDS)
