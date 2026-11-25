@@ -99,7 +99,11 @@ def get_public_base_url() -> str:
 async def start_photo_server() -> None:
     """HTTP-сервер: /photos/<артикул>/<файл> — стабильные ссылки для площадок;
     /feed.xml — YML-фид для Яндекс Карт и Tilda; /eda.csv — CSV для импорта в Еду."""
-    from yandex_feed import get_feed_xml
+    from yandex_feed import get_feed_xml_live
+
+    async def yb_feed_handler(request: web.Request) -> web.Response:
+        xml = await get_feed_xml_live()
+        return web.Response(text=xml, content_type="text/xml", charset="utf-8")
 
     async def eda_csv_handler(request: web.Request) -> web.Response:
         csv_path = config.db_path.parent / "eda_catalog.csv"
@@ -116,7 +120,7 @@ async def start_photo_server() -> None:
     photos_root.mkdir(parents=True, exist_ok=True)
     app = web.Application()
     app.router.add_static("/photos/", photos_root, show_index=False)
-    app.router.add_get("/feed.xml", lambda r: web.Response(text=get_feed_xml(), content_type="text/xml"))
+    app.router.add_get("/feed.xml", yb_feed_handler)
     app.router.add_get("/eda.csv", eda_csv_handler)
     app.router.add_get("/", lambda r: web.Response(text="ok"))
     runner = web.AppRunner(app)
