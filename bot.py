@@ -1816,8 +1816,11 @@ async def main():
         logger.info("Поллер отзывов ОТКЛЮЧЁН (REVIEWS_ENABLED=off)")
     logger.info("Запуск сторожа топ-18...")
     asyncio.create_task(top18_watchdog())
-    logger.info("Запуск еженедельного отчёта (пн 10:00 СПб)...")
-    asyncio.create_task(weekly_report_task())
+    if os.environ.get("WEEKLY_REPORT", "off").lower() in ("on", "1", "yes"):
+        logger.info("Запуск еженедельного отчёта (пн 10:00 СПб)...")
+        asyncio.create_task(weekly_report_task())
+    else:
+        logger.info("Еженедельный отчёт ВЫКЛЮЧЕН (включить: WEEKLY_REPORT=on); доступна команда /отчет")
     logger.info("Запуск бота...")
     await dp.start_polling(bot)
 
