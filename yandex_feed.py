@@ -90,7 +90,70 @@ def _seo_description(p: Dict[str, Any], cat: str) -> str:
     return full[:3000]
 
 
-def build_yml_xml(products: List[Dict[str, Any]]) -> str:
+async def fetch_tilda_map() -> Dict[str, Dict[str, Any]]:
+    """Каталог Tilda для ссылок в фиде: uid/цены/название. При сбое — пусто."""
+    try:
+        from tilda_mcp import TildaMCPClient
+        cl = TildaMCPClient()
+        import json as _json
+        out, slice_ = [], 1
+        while slice_ <= 5:
+            raw = await cl.call_tool("store_get_products_list",
+                                     {"projectid": int(getattr(config, "tilda_project_id", 13756635)),
+                                      "slice": slice_, "slicesize": 100})
+            d = _json.loads(raw)
+            batch = d.get("products") or []
+            if not batch:
+                break
+            out += batch
+            if len(batch) < 100:
+                break
+            slice_ += 1
+        return {p["uid"]: p for p in out if p.get("uid")}
+    except Exception as e:
+        logger.warning(f"Tilda map для фида недоступна: {e}")
+        return {}
+
+
+def _core(name: str) -> str:
+    n = EMOJI_RX.sub("", (name or "").lower())
+    n = re.sub(r"[«\"'](.*?)[»\"']", r" \1 ", n)
+    n = re.sub(r"[^a-zа-я0-9 ]", " ", n)
+    for w in ("букет", "монобукет", "авторский", "нежный", "светлый", "осенний", "размер", "шт"):
+        n = n.replace(w, " ")
+    return re.sub(r"\s{2,}", " ", n).strip()
+
+
+def _quoted(name: str):
+    m = re.search(r"[«\"]([^»\"]{3,40})[»\"]", name or "")
+    return m.group(1).strip().lower() if m else None
+
+
+def find_tilda_url(fw_name: str, maps_price: int, tmap: Dict[str, Dict[str, Any]]) -> str:
+    """Ссылка на товар Tilda: по имени в «кавычках», иначе цена в диапазоне + ядро имени."""
+    items = [t for t in tmap.values() if not (t.get("off") or "")]
+    q = _quoted(fw_name)
+    if q:
+        for t in items:
+            if _quoted(t.get("title") or "") == q:
+                return f"https://ren-flowers.ru/tproduct/{t['uid']}"
+    fc = _core(fw_name)
+    best, best_len = "", 0
+    for t in items:
+        try:
+            pmin = float(t.get("price_min") or t.get("price") or 0)
+            pmax = float(t.get("price_max") or t.get("price") or pmin)
+        except (TypeError, ValueError):
+            continue
+        if not (pmin <= maps_price <= pmax):
+            continue
+        tc = _core(t.get("title") or "")
+        if tc and (tc in fc or fc in tc) and len(tc) > best_len:
+            best, best_len = f"https://ren-flowers.ru/tproduct/{t['uid']}", len(tc)
+    return best
+
+
+def build_yml_xml(products: List[Dict[str, Any]], tmap: Dict[str, Dict[str, Any]] = None) -> str:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     parts = [f'<?xml version="1.0" encoding="UTF-8"?>',
              f'<yml_catalog date="{now_str}"><shop>',
@@ -115,7 +178,7 @@ def build_yml_xml(products: List[Dict[str, Any]]) -> str:
         images = [u for u in (p.get("images") or []) if u.startswith("http")]
         desc = _seo_description(p, cat)
         short = _clean(desc.split("\n\n")[0])[:250]
-        url = (p.get("url") or "").strip()[:512]
+        url = find_tilda_url(p.get("name") or "", price, tmap or {}) or (p.get("url") or "").strip()[:512]
         parts.append(f'<offer id="FW-{p.get("productId")}" available="true">')
         parts.append(f"<name>{escape(name)}</name><vendor>REN</vendor>")
         parts.append(f"<price>{price}</price><currencyId>RUB</currencyId>")
@@ -163,7 +226,8 @@ async def get_feed_xml_live() -> str:
         return _cache["xml"]
     try:
         products = await fetch_flowwow_products()
-        xml = build_yml_xml(products)
+        tmap = await fetch_tilda_map()
+        xml = build_yml_xml(products, tmap)
         if "<offer " in xml:
             _cache.update(ts=time.time(), xml=xml)
         return xml or _cache["xml"]
