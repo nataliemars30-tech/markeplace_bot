@@ -58,7 +58,8 @@ for p in fw:
     if not p.get("isActive") or p.get("isArchived"):
         continue
     price = Y._maps_price(float(p.get("price") or 0))
-    name = Y._clean(p.get("name") or "")[:250]
+    cat0 = Y._category(p)
+    name = Y._enrich_name(p, cat0)
     if price <= 0 or not name:
         continue
     cat = Y._category(p)

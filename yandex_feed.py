@@ -71,23 +71,81 @@ def _maps_price(fw_price: float) -> int:
     return int(round(base * 1.1 / 10) * 10)
 
 
+def _sostav_text(p: Dict[str, Any]) -> str:
+    """Состав из описания («Состав: А — 2 шт») или хвоста названия."""
+    d = p.get("description") or ""
+    m = re.search(r"Состав:\s*(.+?)(?:\.\s|\.$|$)", d, re.S)
+    if m:
+        return _clean(m.group(1).replace("\n", " "))[:400]
+    n = p.get("name") or ""
+    parts = re.split(r"\s[-–—]\s|\s+с\s+", n, maxsplit=1)
+    if len(parts) > 1:
+        return _clean(parts[1])[:400]
+    return ""
+
+
+def _enrich_name(p: Dict[str, Any], cat: str) -> str:
+    """Название с использованием лимита 250: исходное + состав/SEO-хвост."""
+    name = _clean(p.get("name") or "")
+    if len(name) >= 200:
+        return name[:250]
+    tail = SEO_TAIL.get({"1": "author", "5": "author", "2": "mono", "3": "piece", "4": "decor"}.get(cat, "author"),
+                        "доставка цветов по Санкт-Петербургу")
+    cand = f"{name} — {tail}"
+    return cand[:250] if len(cand) <= 250 else name
+
+
+def _short_description(p: Dict[str, Any], cat: str) -> str:
+    """Короткое описание ~250 знаков: лид + состав + УТП (лимит Карточки)."""
+    base = _clean((p.get("description") or "").split("\n")[0])
+    for marker in ("REN - азиатская", "Почему клиенты"):
+        i = base.find(marker)
+        if i > 0:
+            base = base[:i]
+    sostav = _sostav_text(p)
+    parts = [base] if base else []
+    if sostav:
+        parts.append(f"Состав: {sostav}")
+    parts.append("Свежие цветы утренней поставки, фирменная упаковка, доставка по СПб.")
+    out = ". ".join(x.strip(" .") for x in parts if x.strip(" .")) + "."
+    if len(out) > 250:
+        out = out[:247].rsplit(" ", 1)[0].rstrip(" ,.;") + "..."
+    return out
+
+
 def _seo_description(p: Dict[str, Any], cat: str) -> str:
-    """Описание с ключевыми словами, без ссылок/телефонов (требование Яндекс Бизнеса)."""
+    """Полное описание ~2500-3000 знаков: уникальный текст + состав + уход + SEO-блок."""
     base = _clean(p.get("description") or "")
-    # фирменный подвал Flowwow с ценами/доставкой/самовывозом оставляем только фактуру
     for marker in ("REN - азиатская эстетика", "Почему клиенты выбирают нашу студию"):
         i = base.find(marker)
         if i > 0:
             base = base[:i]
+    sostav = _sostav_text(p)
     key = {"1": "Купить авторский букет в Санкт-Петербурге с доставкой.",
            "2": "Купить монобукет в Санкт-Петербурге с доставкой за 90 минут.",
-           "3": "Свежие цветы поштучно в Санкт-Петербурге.",
+           "3": "Свежие цветы поштучно в Санкт-Петербурге с доставкой.",
            "4": "Декор для букетов от цветочной студии REN в Санкт-Петербурге.",
            "5": "Авторские композиции от студии REN, Санкт-Петербург."}[cat]
-    seo = (f"{key} Цветочная студия REN — азиатская эстетика в современных букетах: "
-           f"свежие цветы утренней поставки, фирменная упаковка, фото букета перед отправкой.")
-    full = (base + "\n\n" + seo).strip() if base else seo
-    return full[:3000]
+    blocks = [base] if base else []
+    if sostav:
+        blocks.append(f"Состав букета: {sostav}.")
+    blocks.append(
+        "Как ухаживать: перед постановкой в вазу обновите срез стеблей на 1–2 см под углом, "
+        "используйте чистую прохладную воду и меняйте её каждые 1–2 дня. Держите букет вдали "
+        "от прямого солнца, сквозняков и батарей — так цветы простоят дольше.")
+    blocks.append(
+        f"{key} Идеален на день рождения, День матери, юбилей, свидание, свадьбу, 8 Марта, "
+        f"выписку из роддома или как тёплый комплимент без повода. Доставка цветов по "
+        f"Санкт-Петербургу за 90 минут: привезём букет в защитной фирменной упаковке, "
+        f"перед отправкой пришлём фото готового букета. Цветочная студия REN — азиатская "
+        f"эстетика в современных букетах: свежие премиум-сорта утренней поставки, авторская "
+        f"флористика, бережная сборка каждой композиции вручную. Закажите этот букет с "
+        f"доставкой на дом или в офис — флорист соберёт его в день доставки, сохранив "
+        f"настроение и палитру задумки.")
+    full = "\n\n".join(b.strip() for b in blocks if b.strip())
+    if len(full) > 3000:
+        full = full[:2997].rsplit(" ", 1)[0].rstrip(" ,.;") + "..."
+    return full
 
 
 async def fetch_tilda_map() -> Dict[str, Dict[str, Any]]:
@@ -171,13 +229,13 @@ def build_yml_xml(products: List[Dict[str, Any]], tmap: Dict[str, Dict[str, Any]
         price = _maps_price(float(p.get("price") or 0))
         if price <= 0:
             continue
-        name = _clean(p.get("name") or "")[:250]
+        cat = _category(p)
+        name = _enrich_name(p, cat)
         if not name:
             continue
-        cat = _category(p)
         images = [u for u in (p.get("images") or []) if u.startswith("http")]
         desc = _seo_description(p, cat)
-        short = _clean(desc.split("\n\n")[0])[:250]
+        short = _short_description(p, cat)
         url = find_tilda_url(p.get("name") or "", price, tmap or {}) or (p.get("url") or "").strip()[:512]
         parts.append(f'<offer id="FW-{p.get("productId")}" available="true">')
         parts.append(f"<name>{escape(name)}</name><vendor>REN</vendor>")
