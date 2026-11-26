@@ -82,7 +82,12 @@ class FlowwowClient:
             "manufacturerCountry": 1,  # Россия (справочник subCategoryProperties)
             # тематические подборки — отмечаем ВСЕ (правило владельца 17.11)
             "thematicSelections": [1, 32, 33, 34, 39, 40, 48, 53, 102, 159],
-            "consist": consist or [{"name": name, "quantity": 1, "measure": 1}]
+            # API сохраняет количество ТОЛЬКО из ключа "val" — "quantity" игнорирует
+            # и молча ставит 1 шт (инцидент 25.11, проверено 26.11)
+            "consist": [
+                {**c, "val": int(c.get("val") or c.get("quantity") or 1)}
+                for c in (consist or [{"name": name, "quantity": 1, "measure": 1}])
+            ]
         }
         # Цвет товара (справочник Flowwow) — из гаммы букета
         fw_color_map = {
