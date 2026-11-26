@@ -122,11 +122,14 @@ def main():
             # 3. классический update: подборки + 1 минута + поля (с реальным составом)
             if pid not in updated:
                 raw_cons = details.get(str(pid)) or []
-                consist = [{"name": c["name"], "quantity": int(c.get("quantity") or 1), "measure": 1}
+                # ВАЖНО: API сохраняет количество ТОЛЬКО из ключа "val" —
+                # "quantity" игнорирует и молча ставит 1 шт (инцидент 25.11)
+                consist = [{"name": c["name"], "val": int(c.get("quantity") or c.get("val") or 1),
+                            "quantity": int(c.get("quantity") or c.get("val") or 1), "measure": 1}
                            for c in raw_cons
                            if c.get("name") and not any(e in c["name"].lower() for e in EXPENDABLES)]
                 if not consist:
-                    consist = [{"name": "Цветы сезонные", "quantity": 1, "measure": 1}]
+                    consist = [{"name": "Цветы сезонные", "val": 1, "quantity": 1, "measure": 1}]
                 item = {
                     "offerId": oid,
                     "productType": p.get("type") or 1,
