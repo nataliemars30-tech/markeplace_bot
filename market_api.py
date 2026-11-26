@@ -423,7 +423,10 @@ class YandexMarketClient:
             "name": name[:256],
             "marketCategoryId": 61454449,
             "pictures": pictures[:30],
-            "vendor": "REN",
+            # «Без бренда» — официальное значение справочника Маркета: даёт баллы
+            # за заполненный бренд без верификации (владелица 26.11). REN остаётся
+            # в названии и описании. Если бренд REN верифицируют — вернуть "REN".
+            "vendor": "Без бренда",
             "description": description[:6000],
             "basicPrice": {"value": int(round(float(price))), "currencyId": "RUR"},
             "weightDimensions": {"length": max(int(pot_cm), 10), "width": max(int(pot_cm), 10),
