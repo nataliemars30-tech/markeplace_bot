@@ -1,17 +1,17 @@
 """Персистентное FSM-хранилище на SQLite (переживает рестарт/деплой бота).
 
-Интерфейс aiogram 3 BaseStorage. Данные — JSON, поэтому всё, что кладётся
-в state.update_data(), должно быть JSON-сериализуемым (у нас так и есть:
-строки, числа, списки, словари из JSON API).
+Интерфейс aiogram 3 (>=3.7) BaseStorage: методы БЕЗ параметра bot.
+Данные — JSON, поэтому всё, что кладётся в state.update_data(), должно быть
+JSON-сериализуемым (у нас так и есть: строки, числа, списки, словари).
 """
 
 import json
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
-from aiogram import Bot
+from aiogram.fsm.state import State
 from aiogram.fsm.storage.base import BaseStorage, StorageKey
 
 _SCHEMA = """
@@ -41,35 +41,36 @@ class SQLiteStorage(BaseStorage):
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
 
-    async def set_state(self, bot: Bot, key: StorageKey, state: Optional[str] = None) -> None:
+    async def set_state(self, key: StorageKey, state: Optional[str | State] = None) -> None:
+        value = state.state if isinstance(state, State) else state
         with self._lock:
             self._conn.execute(
                 "INSERT INTO fsm_state (key, state) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET state = excluded.state",
-                (_pack(key), state),
+                (_pack(key), value),
             )
             self._conn.commit()
 
-    async def get_state(self, bot: Bot, key: StorageKey) -> Optional[str]:
+    async def get_state(self, key: StorageKey) -> Optional[str]:
         with self._lock:
             row = self._conn.execute(
                 "SELECT state FROM fsm_state WHERE key = ?", (_pack(key),)
             ).fetchone()
         return row[0] if row else None
 
-    async def set_data(self, bot: Bot, key: StorageKey, data: Dict[str, Any]) -> None:
+    async def set_data(self, key: StorageKey, data: Mapping[str, Any]) -> None:
         with self._lock:
             if data:
                 self._conn.execute(
                     "INSERT INTO fsm_data (key, data) VALUES (?, ?) "
                     "ON CONFLICT(key) DO UPDATE SET data = excluded.data",
-                    (_pack(key), json.dumps(data, ensure_ascii=False)),
+                    (_pack(key), json.dumps(dict(data), ensure_ascii=False)),
                 )
             else:
                 self._conn.execute("DELETE FROM fsm_data WHERE key = ?", (_pack(key),))
             self._conn.commit()
 
-    async def get_data(self, bot: Bot, key: StorageKey) -> Dict[str, Any]:
+    async def get_data(self, key: StorageKey) -> Dict[str, Any]:
         with self._lock:
             row = self._conn.execute(
                 "SELECT data FROM fsm_data WHERE key = ?", (_pack(key),)
