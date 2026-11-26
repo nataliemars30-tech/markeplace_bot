@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, BaseFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
+from fsm_storage import SQLiteStorage
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -60,7 +60,7 @@ class WhitelistFilter(BaseFilter):
 
 
 bot = Bot(token=config.telegram_bot_token)
-dp = Dispatcher(storage=MemoryStorage())
+dp = Dispatcher(storage=SQLiteStorage(config.db_path.parent / "fsm_storage.db"))
 dp.message.filter(WhitelistFilter())
 dp.callback_query.filter(WhitelistFilter())
 dp.include_router(handlers_menu.router)
