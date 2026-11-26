@@ -81,10 +81,10 @@ def build_eda_row(*, name: str, variation_label: str, is_mono: bool,
         cat_name = "Комнатные растения"
         dims = ""
         if pot_cm and height_cm:
-            dims = f" {pot_cm}/{height_cm}"
+            dims = f", высота {height_cm} см, горшок {pot_cm} см"
         elif height_cm:
-            dims = f" {height_cm} см"
-        title = f"Комнатное растение {name}{dims} в горшке"[:100]
+            dims = f", высота {height_cm} см"
+        title = f"Комнатное растение {name} в горшке{dims}"[:100]
     elif is_mono and positions:
         cat_name = "Монобукеты"
         qty = sum(int(p.get("qty", 1)) for p in positions)

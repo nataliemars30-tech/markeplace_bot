@@ -1487,7 +1487,8 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         pot_cm = int(var.get("pot_cm") or 0)
         if is_plant:
             _h = height_cm or 50
-            fw_name = build_plant_title(name, _h, pot_cm)
+            # Flowwow — БЕЗ «— REN» в названии (владелица 26.11); Маркет — с брендом
+            fw_name = build_plant_title(name, _h, pot_cm, with_brand=False)
             market_name = build_plant_title(name, _h, pot_cm, limit=256)
         elif is_mono:
             fw_name = generate_flowwow_title(name, is_mono, dpos, var["label"])

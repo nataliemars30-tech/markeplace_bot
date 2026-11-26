@@ -566,14 +566,17 @@ def plant_tnved(name: str) -> str:
     return PLANT_TNVED_FLOWERING if is_flowering_plant(name) else PLANT_TNVED_DEFAULT
 
 
-def build_plant_title(name: str, height_cm: int = 0, pot_cm: int = 0, limit: int = 100) -> str:
-    """Название карточки растения: вид + сорт + габариты. Без слова «букет»."""
+def build_plant_title(name: str, height_cm: int = 0, pot_cm: int = 0, limit: int = 100,
+                      with_brand: bool = True) -> str:
+    """Название карточки растения: вид + сорт + габариты. Без слова «букет».
+    with_brand=False — для Flowwow (владелица 26.11: «REN» в названии на Флау не нужен)."""
     dims = ""
     if pot_cm and height_cm:
-        dims = f" {pot_cm}/{height_cm}"
+        dims = f", высота {height_cm} см, диаметр горшка {pot_cm} см"
     elif height_cm:
-        dims = f" {height_cm} см"
-    title = f"Комнатное растение {name}{dims} в горшке — REN"
+        dims = f", высота {height_cm} см"
+    brand = " — REN" if with_brand else ""
+    title = f"Комнатное растение {name} в горшке{dims}{brand}"
     return title[:limit]
 
 
