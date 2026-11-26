@@ -1393,6 +1393,12 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_reply_markup(reply_markup=None)
 
     root_cat = data.get("root_category", "Букеты")
+    if not data.get("photo_file_ids"):
+        await callback.message.answer(
+            "⚠️ Данные загрузки потеряны (бот перезапускался между фото и публикацией).\n"
+            "Начните заново: кнопка категории → фото с подписью.",
+            reply_markup=get_main_reply_keyboard())
+        return
     name = data.get("name", "Букет REN")
     p_type = data.get("product_type", "author")
     is_mono = p_type == "mono"
@@ -1764,11 +1770,13 @@ async def global_error_handler(event: types.ErrorEvent):
     elif event.update.callback_query and event.update.callback_query.message:
         target = event.update.callback_query.message
     if target:
+        exc = event.exception
+        cause = f"{type(exc).__name__}: {exc}"[:200] if exc else "неизвестная ошибка"
         try:
             await target.answer(
-                "❌ <b>Сбой сети или сервиса</b> — процесс прерван, карточка может быть неполной.\n"
-                "Подождите пару минут (у хостера бывают транзитные сбои DNS) и повторите создание товара.\n"
-                "Если ошибка повторяется — пришлите скрин, разберём.",
+                "❌ <b>Сбой — процесс прерван</b>, карточка может быть неполной.\n"
+                f"Причина: <code>{esc(cause)}</code>\n"
+                "Подождите пару минут и повторите. Если ошибка повторяется — пришлите скрин, разберём.",
                 reply_markup=get_main_reply_keyboard(),
                 parse_mode="HTML"
             )
