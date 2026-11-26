@@ -37,51 +37,61 @@ def main():
         if pid in done:
             continue
         oid = f"REN-FW-{pid}"
-        while True:
-            prep = M.call_tool("prepare_product_change", {"change": {
-                "operation": "map_offer", "shop_id": M.SHOP_ID,
-                "offers": [{"offerId": oid, "productId": pid}]}}, rid=100 + i)
-            txt = prep.get("text") or json.dumps(prep, ensure_ascii=False)
-            m = re.search(r'"retry_after":\s*"?(\d+)', txt)
-            if m:
-                wait = int(m.group(1)) + 30
-                print(f"429: жду {wait}с (товар {i+1}/{len(targets)})", flush=True)
-                time.sleep(wait)
-                M.init()
+        try:
+            while True:
+                prep = M.call_tool("prepare_product_change", {"change": {
+                    "operation": "map_offer", "shop_id": M.SHOP_ID,
+                    "offers": [{"offerId": oid, "productId": pid}]}}, rid=100 + i)
+                txt = prep.get("text") or json.dumps(prep, ensure_ascii=False)
+                m = re.search(r'"retry_after":\s*"?(\d+)', txt)
+                if m:
+                    wait = int(m.group(1)) + 30
+                    print(f"429: жду {wait}с (товар {i+1}/{len(targets)})", flush=True)
+                    time.sleep(wait)
+                    M.init()
+                    continue
+                break
+            if prep.get("text") and "Error" in prep["text"]:
+                print("PREP ERR", pid, prep["text"][:150], flush=True)
+                err += 1
+                time.sleep(2)
                 continue
-            break
-        if prep.get("text") and "Error" in prep["text"]:
-            print("PREP ERR", pid, prep["text"][:150], flush=True)
-            err += 1
-            time.sleep(2)
-            continue
-        # подтверждаем по change_id (формат MCP: prepare -> change_id, apply -> confirmed)
-        cid = prep.get("change_id") or (prep.get("proposal") or {}).get("change_id")
-        if not cid:
-            print("NO CHANGE_ID", pid, str(prep)[:150], flush=True)
-            err += 1
-            continue
-        while True:
-            appl = M.call_tool("apply_product_change", {"change_id": cid, "confirmed": True}, rid=200 + i)
-            txt = appl.get("text") or json.dumps(appl, ensure_ascii=False)
-            m = re.search(r'"retry_after":\s*"?(\d+)', txt)
-            if m:
-                wait = int(m.group(1)) + 30
-                print(f"429 (apply): жду {wait}с", flush=True)
-                time.sleep(wait)
-                M.init()
+            # подтверждаем по change_id (формат MCP: prepare -> change_id, apply -> confirmed)
+            cid = prep.get("change_id") or (prep.get("proposal") or {}).get("change_id")
+            if not cid:
+                print("NO CHANGE_ID", pid, str(prep)[:150], flush=True)
+                err += 1
                 continue
-            break
-        if appl.get("text") and "Error" in appl["text"]:
-            print("APPLY ERR", pid, appl["text"][:150], flush=True)
+            while True:
+                appl = M.call_tool("apply_product_change", {"change_id": cid, "confirmed": True}, rid=200 + i)
+                txt = appl.get("text") or json.dumps(appl, ensure_ascii=False)
+                m = re.search(r'"retry_after":\s*"?(\d+)', txt)
+                if m:
+                    wait = int(m.group(1)) + 30
+                    print(f"429 (apply): жду {wait}с", flush=True)
+                    time.sleep(wait)
+                    M.init()
+                    continue
+                break
+            if appl.get("text") and "Error" in appl["text"]:
+                print("APPLY ERR", pid, appl["text"][:150], flush=True)
+                err += 1
+            else:
+                ok += 1
+                done.add(pid)
+                save_progress(done)
+                if ok % 10 == 0:
+                    print(f"прогресс: {ok} ок, {err} ошибок ({i+1}/{len(targets)})", flush=True)
+            time.sleep(1.5)
+        except Exception as e:
+            print(f"СБОЙ на {pid}: {str(e)[:80]} — пауза 60с и дальше", flush=True)
             err += 1
-        else:
-            ok += 1
-            done.add(pid)
-            save_progress(done)
-            if ok % 10 == 0:
-                print(f"прогресс: {ok} ок, {err} ошибок ({i+1}/{len(targets)})", flush=True)
-        time.sleep(1.5)
+            time.sleep(60)
+            try:
+                M.init()
+            except Exception:
+                time.sleep(60)
+            continue
     print(f"ГОТОВО: присвоено {ok}, ошибок {err}", flush=True)
 
 
