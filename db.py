@@ -31,6 +31,7 @@ def init_db() -> None:
         cursor.execute("INSERT OR IGNORE INTO counters (prefix, current_value) VALUES ('REN-C', 0);") # Композиции
         cursor.execute("INSERT OR IGNORE INTO counters (prefix, current_value) VALUES ('REN-D', 0);") # Декор
         cursor.execute("INSERT OR IGNORE INTO counters (prefix, current_value) VALUES ('REN-A', 0);") # Доп. товары
+        cursor.execute("INSERT OR IGNORE INTO counters (prefix, current_value) VALUES ('REN-P', 0);") # Растения
 
         # Таблица продуктов и вариаций
         cursor.execute("""
@@ -149,7 +150,17 @@ def get_next_article(root_category: str) -> str:
         cursor.execute("SELECT current_value FROM counters WHERE prefix = ?;", (prefix,))
         row = cursor.fetchone()
         next_val = (row["current_value"] if row else 0) + 1
-        cursor.execute("UPDATE counters SET current_value = ? WHERE prefix = ?;", (next_val, prefix))
+        # Защита от коллизий: счётчик мог отставать от фактически выданных
+        # артикулов (инцидент 26.11 — REN-P не было в counters, антуриум получил
+        # REN-P-001 второй раз). Сверяемся с максимумом в products.
+        cursor.execute(
+            "SELECT MAX(CAST(SUBSTR(base_article, ?) AS INTEGER)) AS m "
+            "FROM products WHERE base_article GLOB ?;",
+            (len(prefix) + 2, f"{prefix}-[0-9]*"))
+        max_used = cursor.fetchone()["m"] or 0
+        next_val = max(next_val, max_used + 1)
+        cursor.execute("INSERT OR REPLACE INTO counters (prefix, current_value) VALUES (?, ?);",
+                       (prefix, next_val))
         conn.commit()
         return f"{prefix}-{next_val:03d}"
 
