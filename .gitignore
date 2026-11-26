@@ -6,3 +6,5 @@ fw_auth_url.txt
 fw_verifier.txt
 fw_mcp_tokens.json
 .secrets.local
+google_credentials.json
+fw_mcp_tokens.json
