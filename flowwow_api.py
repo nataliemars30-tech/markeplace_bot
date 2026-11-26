@@ -39,7 +39,10 @@ class FlowwowClient:
         production_time: int = 5,
         width_cm: int = 30,
         height_cm: int = 40,
-        color: str = ""
+        color: str = "",
+        include_consist: bool = True,
+        stock: Optional[int] = None,
+        extra: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Создание товара на Flowwow.
@@ -68,10 +71,6 @@ class FlowwowClient:
             "discount": "0",
             "description": description or composition or name,
             "images": photo_urls,
-            # Наличие: stock ИЛИ productionTime (взаимоисключающие, обязательно одно).
-            # REN собирает букеты под заказ: «изготовление 1 минута».
-            # measure 7 = МИНУТЫ (9 = дни, проверено 18.11)
-            "productionTime": {"val": 1, "measure": 7},
             "minOrderCount": 1,
             "width": {"val": width_cm, "measure": 3},
             "height": {"val": height_cm, "measure": 3},
@@ -80,15 +79,31 @@ class FlowwowClient:
             # Flowwow отклоняет всю карточку с «Поле недопустимо» (16.11, проверено)
             "manufacturerName": rule_get("flowwow", "производитель_название", "REN, Россия"),
             "manufacturerCountry": 1,  # Россия (справочник subCategoryProperties)
-            # тематические подборки — отмечаем ВСЕ (правило владельца 17.11)
-            "thematicSelections": [1, 32, 33, 34, 39, 40, 48, 53, 102, 159],
-            # API сохраняет количество ТОЛЬКО из ключа "val" — "quantity" игнорирует
-            # и молча ставит 1 шт (инцидент 25.11, проверено 26.11)
-            "consist": [
+        }
+        # Наличие: stock ИЛИ productionTime (взаимоисключающие, обязательно одно).
+        # Букеты — под заказ («изготовление 1 минута», measure 7 = минуты).
+        # Растения — «в наличии»: передаём stock, productionTime не шлём.
+        if stock is not None:
+            item["stock"] = int(stock)
+        else:
+            item["productionTime"] = {"val": 1, "measure": 7}
+        # Тематические подборки: у букетов и растений (sub 14) РАЗНЫЕ справочники
+        # (subCategoryProperties 26.11). Растения: 1,32,33,34,40,48,53,159.
+        if sub_category_id == 14:
+            item["thematicSelections"] = [1, 32, 33, 34, 40, 48, 53, 159]
+        else:
+            item["thematicSelections"] = [1, 32, 33, 34, 39, 40, 48, 53, 102, 159]
+        # Состав: у растений (sub 14) поля consist НЕТ в схеме — не отправляем вовсе.
+        # API сохраняет количество ТОЛЬКО из ключа "val" — "quantity" игнорирует
+        # и молча ставит 1 шт (инцидент 25.11, проверено 26.11)
+        if include_consist and sub_category_id != 14:
+            item["consist"] = [
                 {**c, "val": int(c.get("val") or c.get("quantity") or 1)}
                 for c in (consist or [{"name": name, "quantity": 1, "measure": 1}])
             ]
-        }
+        # Доп. поля подкатегории (для растений: wateringFrequency, careLevel и т.п.)
+        if extra:
+            item.update(extra)
         # Цвет товара (справочник Flowwow) — из гаммы букета
         fw_color_map = {
             "белый": 10, "кремовый": 14, "розовый": 2, "красный": 1,

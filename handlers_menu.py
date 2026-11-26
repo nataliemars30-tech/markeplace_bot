@@ -22,6 +22,7 @@ CATEGORY_MAP = {
     "💍 Свадебное": ("wedding", "Свадебные"),
     "🕯 Декор и свечи": ("decor", "Декор"),
     "🛍 Доп. товары": ("extra", "Доп. товары"),
+    "🪴 Растения": ("plant", "Растения"),
 }
 
 
@@ -50,6 +51,18 @@ async def start_categorized(message: Message, state: FSMContext):
     if ptype == "author":
         await state.set_state(ProductCreationFSM.sizes_mode)
         await message.answer("Выберите формат размеров:", reply_markup=get_sizes_mode_keyboard())
+    elif ptype == "plant":
+        # Растения: цвет и рубрики не спрашиваем — сразу фото и подпись (рубрика Tilda «Растения»)
+        await state.update_data(sizes_mode="single", color="Зеленый",
+                                tilda_categories=["Растения"])
+        await state.set_state(ProductCreationFSM.waiting_for_upload)
+        await message.answer(
+            "✅ <b>Растение:</b> цвет не нужен, рубрика Tilda — «Растения».\n\n"
+            "📸 <b>Отправьте 6 фото одним сообщением (файлами без сжатия) с подписью:</b>\n"
+            "<code>Название / Цена / Высота*ДиаметрГоршка</code>\n\n"
+            "📝 <i>Пример:</i> <code>Монстера Делициоза / 3500 / 100*19</code>\n"
+            "Видео — следующим сообщением (опционально).",
+            parse_mode="HTML")
     else:
         # Для остальных категорий размеры не спрашиваем — сразу цвет
         await state.update_data(sizes_mode="single")

@@ -18,6 +18,7 @@ def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
              KeyboardButton(text="💍 Свадебное")],
             [KeyboardButton(text="🕯 Декор и свечи"),
              KeyboardButton(text="🛍 Доп. товары")],
+            [KeyboardButton(text="🪴 Растения")],
             [KeyboardButton(text="🔄 Копия с Flowwow")],
             [KeyboardButton(text="🔒 Скрыть букет со всех витрин")]
         ],
@@ -74,7 +75,8 @@ TILDA_SECTIONS: List[Tuple[str, str]] = [
     ("🍁 Осенние", "Осенние"),
     ("❄️ Зимние", "Зимние"),
     ("🤱 День Матери", "День Матери"),
-    ("🌹 Монобукеты", "Монобукеты")
+    ("🌹 Монобукеты", "Монобукеты"),
+    ("🪴 Растения", "Растения")
 ]
 
 

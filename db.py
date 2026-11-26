@@ -138,7 +138,8 @@ def get_next_article(root_category: str) -> str:
         "Свадебные": "REN-W",
         "Композиции": "REN-C",
         "Декор": "REN-D",
-        "Доп. товары": "REN-A"
+        "Доп. товары": "REN-A",
+        "Растения": "REN-P"
     }
     prefix = prefix_map.get(root_category, "REN")
 

@@ -8,7 +8,7 @@ import re
 from typing import Dict, Any, List
 
 
-ROOT_CATEGORIES = ["Букеты", "Свадебные", "Композиции", "Декор", "Доп. товары"]
+ROOT_CATEGORIES = ["Букеты", "Свадебные", "Композиции", "Декор", "Доп. товары", "Растения"]
 
 # Разделы каталога Tilda (множественный выбор, через ";")
 TILDA_BOUQUET_CATEGORIES = {
@@ -33,17 +33,19 @@ YANDEX_OKPD2_MAP = {
 
 
 # ------------------ Матрица ценообразования (Мастер-ТЗ) ------------------
-def calculate_platform_prices(base_price: float) -> Dict[str, int]:
+def calculate_platform_prices(base_price: float, root_cat: str = "") -> Dict[str, int]:
     """
     От базовой цены (себестоимость/основа из МойСклада):
       Tilda +10% | Яндекс Карты = Tilda | Flowwow (base+150)*1.5 | Еда +30% | Маркет +50%
+    Растения (решение владелицы 26.11): на Flowwow наценка 40% -> (base+150)*1.4.
     """
     base = float(base_price)
     price_tilda = int(round(base * 1.10))
+    fw_mult = 1.40 if root_cat == "Растения" else 1.50
     return {
         "base": int(round(base)),
         "tilda": int(round(price_tilda / 10) * 10),
-        "flowwow": int(round((base + 150.0) * 1.50 / 10) * 10),
+        "flowwow": int(round((base + 150.0) * fw_mult / 10) * 10),
         "yandex_eda": int(round(base * 1.30 / 10) * 10),
         "yandex_market": int(round(base * 1.50 / 10) * 10),
         "yandex_maps": int(round(price_tilda / 10) * 10)
@@ -80,6 +82,8 @@ def get_flowwow_subcategory(root_cat: str, is_mono: bool, sub_type: str = "") ->
         return 5
     elif root_cat == "Декор":
         return 7
+    elif root_cat == "Растения":
+        return 14  # «Комнатные растения» (проверено: Драцена/Монстера активны с sub 14)
     return 2
 
 
@@ -539,3 +543,62 @@ def display_positions(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             qty = 1
         out.append({"name": clean_position_name(raw), "qty": qty})
     return out
+
+
+# ------------------ Растения (комнатные, в горшках) ------------------
+# ТН ВЭД ЕАЭС: 0602 90 910 0 — цветущие с бутонами/цветками; 0602 90 950 0 — прочие живые растения
+PLANT_TNVED_FLOWERING = "0602909100"
+PLANT_TNVED_DEFAULT = "0602909500"
+PLANT_OKPD2 = {"code": "01.19.23", "name": "Цветы горшечные (комнатные растения)"}
+
+# Слова-маркеры цветущих видов (для ТН ВЭД и параметра «Вид» на Маркете)
+FLOWERING_PLANT_WORDS = ("орхидея", "фаленопсис", "антуриум", "спатифиллум", "стефанотис",
+                         "жасмин", "гардени", "гибискус", "цикламен", "азалия", "герань",
+                         "пеларгония", "бегония", "цинерария", "каланхоэ", "сенполия", "фиалка")
+
+
+def is_flowering_plant(name: str) -> bool:
+    low = (name or "").lower()
+    return any(w in low for w in FLOWERING_PLANT_WORDS)
+
+
+def plant_tnved(name: str) -> str:
+    return PLANT_TNVED_FLOWERING if is_flowering_plant(name) else PLANT_TNVED_DEFAULT
+
+
+def build_plant_title(name: str, height_cm: int = 0, pot_cm: int = 0, limit: int = 100) -> str:
+    """Название карточки растения: вид + сорт + габариты. Без слова «букет»."""
+    dims = ""
+    if pot_cm and height_cm:
+        dims = f" {pot_cm}/{height_cm}"
+    elif height_cm:
+        dims = f" {height_cm} см"
+    title = f"Комнатное растение {name}{dims} в горшке — REN"
+    return title[:limit]
+
+
+def generate_plant_description(name: str, height_cm: int = 0, pot_cm: int = 0,
+                               platform: str = "") -> str:
+    """Описание растения: уход, свет/полив, доставка. БЕЗ аквабокса/открыток/«бесплатно»."""
+    dims = []
+    if height_cm:
+        dims.append(f"высота ~{height_cm} см")
+    if pot_cm:
+        dims.append(f"диаметр горшка {pot_cm} см")
+    dims_txt = f" ({', '.join(dims)})" if dims else ""
+    base = (
+        f"Комнатное растение {name}{dims_txt} от цветочной студии REN, Санкт-Петербург.\n\n"
+        f"Живое растение в транспортировочном горшке — здоровое, адаптированное к квартире, "
+        f"с аккуратной кроной. Подойдёт для дома и офиса, станет спокойным зелёным акцентом "
+        f"в интерьере и хорошим подарком, который живёт годами.\n\n"
+        f"Уход: яркий рассеянный свет без прямого полуденного солнца; полив умеренный, "
+        f"после подсыхания верхнего слоя грунта; комнатная температура 18–25 °C, "
+        f"берегите от сквозняков. При необходимости подскажем по пересадке и уходу.\n\n"
+    )
+    if platform == "market":
+        # Маркет: без эмодзи и региона в конце — просто про товар
+        return base + "Растение бережно упаковывается для перевозки."
+    return base + (
+        "Доставляем по Санкт-Петербургу в день заказа — растение приезжает в защитной "
+        "упаковке, грунт закреплён, листья не помнутся."
+    )

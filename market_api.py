@@ -348,6 +348,132 @@ class YandexMarketClient:
             raise YandexMarketError(f"Маркет ERROR: {json.dumps(data, ensure_ascii=False)[:400]}")
         return {"success": True, "offerId": offer_id}
 
+    async def create_plant_card(
+        self,
+        *,
+        offer_id: str,
+        name: str,
+        price: int,
+        pictures: List[str],
+        description: str,
+        plant_name: str,
+        height_cm: int = 50,
+        pot_cm: int = 17,
+        flowering: bool = False,
+        tnved: str = "0602909500",
+        weight_kg: float = 2.0,
+        video_url: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Карточка комнатного растения (категория 61454449 «Растения комнатные»).
+
+        Схема параметров: POST /v2/category/61454449/parameters (снята 26.11).
+        Справочник вида «Растение» (275 значений) — market_plant_names.json.
+        ТН ВЭД: 0602909100 цветущие / 0602909500 прочие (platform_rules.plant_tnved).
+        """
+        P = {  # parameterId категории 61454449
+            "Высота": 14805336, "Диаметр горшка": 23681530, "Тип": 21194330,
+            "Вид": 33422550, "Растение": 38277750, "Размещение": 27142752,
+            "Емкость": 38236830, "Полив": 38263870, "Освещение": 38255350,
+            "Продолжительность жизни": 39965810, "Влажность воздуха": 38236030,
+            "Дополнительная информация": 7351754, "Единиц в упаковке": 14805583,
+            "Цвет для фильтра": 13887626, "Упаковок в товаре": 33663230,
+            "Прочие характеристики": 57046341,
+        }
+        pv: List[Dict[str, Any]] = [
+            {"parameterId": P["Тип"], "valueId": 34066774, "value": "растение"},
+            {"parameterId": P["Вид"],
+             "valueId": 39692115 if flowering else 39692116,
+             "value": "декоративно-цветущие" if flowering else "декоративно-лиственные"},
+            {"parameterId": P["Емкость"], "valueId": 39696521, "value": "горшок"},
+            {"parameterId": P["Размещение"],
+             "valueId": 28737733 if height_cm >= 70 else 28737693,
+             "value": "напольное" if height_cm >= 70 else "настольное"},
+            {"parameterId": P["Полив"], "valueId": 39700611, "value": "умеренный"},
+            {"parameterId": P["Освещение"], "valueId": 39699871, "value": "свет"},
+            {"parameterId": P["Продолжительность жизни"], "valueId": 40481746,
+             "value": "многолетнее"},
+            {"parameterId": P["Влажность воздуха"], "valueId": 39695611, "value": "умеренная"},
+            {"parameterId": P["Высота"], "value": str(int(height_cm))},
+            {"parameterId": P["Диаметр горшка"], "value": str(int(pot_cm))},
+            {"parameterId": P["Единиц в упаковке"], "value": "1"},
+            {"parameterId": P["Упаковок в товаре"], "value": "1"},
+            {"parameterId": P["Цвет для фильтра"], "valueId": 13891809, "value": "зеленый"},
+            {"parameterId": P["Дополнительная информация"],
+             "value": "Живое растение в транспортировочном горшке. Цветочная студия REN, "
+                      "Санкт-Петербург."},
+            {"parameterId": P["Прочие характеристики"],
+             "value": "Уход:умеренный полив после подсыхания верхнего слоя грунта, "
+                      "яркий рассеянный свет без прямого солнца"},
+        ]
+        # Вид растения — поиск по справочнику 275 значений (имя -> valueId)
+        plant_vid = self._match_plant_value_id(plant_name)
+        if plant_vid:
+            pv.append({"parameterId": P["Растение"], "valueId": plant_vid[0],
+                       "value": plant_vid[1]})
+
+        offer = {
+            "offerId": offer_id,
+            "name": name[:256],
+            "marketCategoryId": 61454449,
+            "pictures": pictures[:30],
+            "vendor": "REN",
+            "description": description[:6000],
+            "basicPrice": {"value": int(round(float(price))), "currencyId": "RUR"},
+            "weightDimensions": {"length": max(int(pot_cm), 10), "width": max(int(pot_cm), 10),
+                                 "height": max(int(height_cm), 10), "weight": weight_kg},
+            "commodityCodes": [{"code": tnved, "type": "CUSTOMS_COMMODITY_CODE"}],
+            "boxCount": 1,
+            "manufacturerCountries": ["Россия"],
+            "vendorCode": offer_id,
+            "parameterValues": pv
+        }
+        if video_url:
+            offer["videos"] = [video_url]
+
+        url = f"{self.BASE_URL}/businesses/{self.BUSINESS_ID}/offer-mappings/update"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                resp = await client.post(url, headers=self._headers(),
+                                         json={"offerMappings": [{"offer": offer}]})
+            except httpx.RequestError as e:
+                raise YandexMarketError(f"Сетевой сбой Маркета: {e}")
+        try:
+            data = resp.json()
+        except Exception:
+            raise YandexMarketError(f"Маркет вернул не-JSON [{resp.status_code}]: {resp.text[:250]}")
+        if resp.status_code != 200:
+            raise YandexMarketError(f"Маркет [{resp.status_code}]: {json.dumps(data, ensure_ascii=False)[:400]}")
+        results = (data.get("result") or {}).get("results") or []
+        for r in results:
+            if r.get("offerId") == offer_id:
+                errors = r.get("errors") or []
+                if errors:
+                    raise YandexMarketError(f"Карточка отклонена: {json.dumps(errors, ensure_ascii=False)[:400]}")
+        if data.get("status") == "ERROR":
+            raise YandexMarketError(f"Маркет ERROR: {json.dumps(data, ensure_ascii=False)[:400]}")
+        return {"success": True, "offerId": offer_id}
+
+    @staticmethod
+    def _match_plant_value_id(plant_name: str):
+        """Название растения -> (valueId, каноническое имя) из справочника Маркета."""
+        import os
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "market_plant_names.json")
+        try:
+            names = json.load(open(path, encoding="utf-8"))
+        except Exception:
+            return None
+        low = str(plant_name or "").lower().replace("ё", "е")
+        # точное вхождение любого слова справочника (длинные первыми)
+        for word in sorted(low.replace(",", " ").split(), key=len, reverse=True):
+            w = word.strip("().«»\"'")
+            if len(w) >= 4 and w in names:
+                return names[w], w
+        for key, vid in names.items():
+            if key and key in low:
+                return vid, key
+        return None
+
     async def add_video(self, offer_id: str, video_url: str) -> Dict[str, Any]:
         """Прикрепить видео к существующей карточке (команда /видео).
 

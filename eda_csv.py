@@ -18,6 +18,8 @@ CAT_IDS = {
     "Монобукеты": "6984f6e6-9562-452c-a822-9898dafce66d",
     "Авторские букеты": "5136113f-547b-4f48-9f7d-907102f9ddef",
     "Цветы поштучно": "4ff50210-e19a-4b76-9ae8-2efe202e7bf5",
+    # Категории нет в ЛК — импорт создаст новую (id пустой)
+    "Комнатные растения": "",
 }
 PLACES = "3282482,3282484"  # оба магазина (place id из ЛК)
 
@@ -71,10 +73,19 @@ def _plural_gen(word: str) -> str:
 def build_eda_row(*, name: str, variation_label: str, is_mono: bool,
                   price_eda: int, positions: List[Dict[str, Any]],
                   picture_urls: List[str], description: str,
-                  height_cm: int = 0, width_cm: int = 0) -> List[str]:
+                  height_cm: int = 0, width_cm: int = 0,
+                  is_plant: bool = False, pot_cm: int = 0) -> List[str]:
     """Одна строка CSV под формат импорта ЛК.
     Вес ВСЕГДА 1 кг; габариты — от флориста, иначе по размеру."""
-    if is_mono and positions:
+    if is_plant:
+        cat_name = "Комнатные растения"
+        dims = ""
+        if pot_cm and height_cm:
+            dims = f" {pot_cm}/{height_cm}"
+        elif height_cm:
+            dims = f" {height_cm} см"
+        title = f"Комнатное растение {name}{dims} в горшке"[:100]
+    elif is_mono and positions:
         cat_name = "Монобукеты"
         qty = sum(int(p.get("qty", 1)) for p in positions)
         flower = _plural_gen(str(positions[0]["name"]).split()[0])
@@ -87,11 +98,26 @@ def build_eda_row(*, name: str, variation_label: str, is_mono: bool,
         cat_name = "Авторские букеты"
         title = f"Авторский букет «{name}» {variation_label}"[:100]
     dims_w, dims_h, _ = SIZE_DIMS.get(str(variation_label).upper(), (35, 45, 1000))
-    width = width_cm or (25 if is_mono else dims_w)
-    height = height_cm or dims_h
+    if is_plant:
+        width = width_cm or pot_cm or 20
+        height = height_cm or 50
+    else:
+        width = width_cm or (25 if is_mono else dims_w)
+        height = height_cm or dims_h
     weight = 1000  # всегда 1 кг (правило владельца)
 
     consist_str = ",".join(f"{p['name']}:{int(p['qty'])}" for p in positions)
+    if not consist_str and is_plant:
+        # Справочник Еды — про срезанные цветы; для растений ближайшие компоненты
+        low = name.lower()
+        for key, comp in (("орхидея", "Орхидея"), ("фаленопсис", "Орхидея"),
+                          ("алоэ", "Алоэ"), ("пальма", "Пальма"),
+                          ("драцена", "Драцена бамбук"), ("бамбук", "Драцена бамбук")):
+            if key in low:
+                consist_str = f"{comp}:1"
+                break
+        else:
+            consist_str = "Зелёные ветки. Зелень и декор:1"
     if not consist_str:
         # Состав обязателен для сохранения карточки в ЛК Еды — не оставляем пустым
         consist_str = f"{title}:1"

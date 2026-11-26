@@ -28,7 +28,9 @@ from platform_rules import (
     get_flowwow_subcategory, get_okpd2_code, calculate_margin, calculate_platform_prices,
     generate_flowwow_description, count_stems, market_color_value_id, market_filter_color_id,
     generate_market_seo_description, display_positions, generate_flowwow_title,
-    generate_tilda_seo_and_text, build_marketplace_title, clean_position_name
+    generate_tilda_seo_and_text, build_marketplace_title, clean_position_name,
+    build_plant_title, generate_plant_description, plant_tnved, is_flowering_plant,
+    PLANT_OKPD2
 )
 from seo_generator import generate_description  # LLM-вариант (отложено); основной текст — description_builder
 from description_builder import generate_marketplace_description
@@ -539,7 +541,8 @@ async def _run_sync(status_msg: types.Message, data: dict, selected: set) -> Non
     is_mono = len({p["name"].split()[0].lower() for p in dpos}) == 1
     # Существительное и тип товара — по подкатегории Flowwow
     subcat = int(data.get("fw_subcat") or 2)
-    NOUN_BY_SUBCAT = {1: "Букет", 2: "Букет", 3: "Коробка", 4: "Корзина", 5: "Композиция", 7: "Декор"}
+    NOUN_BY_SUBCAT = {1: "Букет", 2: "Букет", 3: "Коробка", 4: "Корзина", 5: "Композиция",
+                      7: "Декор", 14: "Растение"}
     TYPE_BY_SUBCAT = {1: "mono", 2: "author", 3: "box", 4: "basket", 5: "vase"}
     noun = NOUN_BY_SUBCAT.get(subcat, "Букет")
     market_type = TYPE_BY_SUBCAT.get(subcat, "author")
@@ -1144,9 +1147,50 @@ def extract_caption(messages: List[types.Message]) -> str:
     return ""
 
 
+def parse_plant_caption(caption: str):
+    """Растение: 'Название / Цена / Высота*ДиаметрГоршка [/ Штук]'.
+    Возвращает (name, variations, height_cm) или None."""
+    parts = [p.strip() for p in caption.split("/")]
+    if len(parts) < 3:
+        return None
+    name = parts[0]
+    if not name:
+        return None
+    try:
+        price = float(re.sub(r"[^\d.,]", "", parts[1]).replace(",", "."))
+    except (ValueError, IndexError):
+        return None
+    if price <= 0:
+        return None
+    dims_raw = parts[2] if len(parts) > 2 else ""
+    m = re.match(r"(\d{1,3})\s*[*x×]\s*(\d{1,3})", dims_raw)
+    height_cm = int(m.group(1)) if m else 0
+    pot_cm = int(m.group(2)) if m else 0
+    stock = 1
+    if len(parts) > 3:
+        ms = re.search(r"\d{1,4}", parts[3])
+        if ms:
+            stock = max(1, int(ms.group(0)))
+    variations = [{
+        "label": "STD", "order_no": "", "entered_price": price,
+        "base_price": price, "cost_price": 0.0, "margin_percent": 0.0,
+        "dims": dims_raw, "pot_cm": pot_cm, "stock": stock,
+    }]
+    return name, variations, height_cm
+
+
 def parse_caption(caption: str, fsm_data: Dict[str, Any]):
     """Парсинг подписи по типу товара. Возвращает (product_name, variations, height_cm, error_text)."""
     p_type = fsm_data.get("product_type")
+    if p_type == "plant":
+        parsed = parse_plant_caption(caption)
+        if not parsed:
+            return None, None, 0, (
+                "⚠️ Не разобрала подпись. Формат:\n"
+                "<code>Название / Цена / Высота*ДиаметрГоршка</code>\n"
+                "Пример: <code>Монстера Делициоза / 3500 / 100*19</code>")
+        product_name, variations, height_cm = parsed
+        return product_name, variations, height_cm, ""
     if p_type == "mono":
         parsed = parse_mono_caption(caption, fsm_data.get("flower_type", "Цветы"))
         if not parsed:
@@ -1352,6 +1396,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
     name = data.get("name", "Букет REN")
     p_type = data.get("product_type", "author")
     is_mono = p_type == "mono"
+    is_plant = root_cat == "Растения"
     color = data.get("color", "")
     tilda_cats = data.get("tilda_categories", [])
     variations = data.get("variations", [])
@@ -1429,7 +1474,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             video_note = (video_note + " " if video_note else "") + f"⚠️ Видео не загружено: {e}"
 
     flowwow_subcat = get_flowwow_subcategory(root_cat, is_mono)
-    okpd2_info = get_okpd2_code(name)
+    okpd2_info = PLANT_OKPD2 | {"tnved": plant_tnved(name)} if is_plant else get_okpd2_code(name)
     style_word = "нежных" if any(w in color for w in ("Неж", "Розов", "Крем", "Бел")) else "насыщенных"
 
     fw_results = []
@@ -1438,8 +1483,13 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         # Чистый состав для покупателя: без упаковки/лент, с человекочитаемыми названиями
         dpos = display_positions(var.get("positions", []))
         # Название по ТЗ 07.11: авторские — формула «Букет [настроение] «Имя» с цветами» (≤100);
-        # моно — прежний формат «N название»
-        if is_mono:
+        # моно — прежний формат «N название»; растения — «Комнатное растение … в горшке»
+        pot_cm = int(var.get("pot_cm") or 0)
+        if is_plant:
+            _h = height_cm or 50
+            fw_name = build_plant_title(name, _h, pot_cm)
+            market_name = build_plant_title(name, _h, pot_cm, limit=256)
+        elif is_mono:
             fw_name = generate_flowwow_title(name, is_mono, dpos, var["label"])
             market_name = build_marketplace_title(name, color, dpos, limit=256,
                                                   market_style=True)
@@ -1448,7 +1498,7 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             # Маркет — официальная схема: тип + производитель + «товар» + состав + размер
             market_name = build_marketplace_title(name, color, dpos, limit=256,
                                                   market_style=True, size_label=var["label"])
-        platform_prices = calculate_platform_prices(var["base_price"])
+        platform_prices = calculate_platform_prices(var["base_price"], root_cat)
 
         consist = [
             {"name": p["name"], "quantity": int(p["qty"]), "measure": 1}
@@ -1475,29 +1525,57 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         packaging_label = "Пленка" if has_packaging else "Под ленту"
         # Описания: Flowwow/Еда — с эмодзи и гео (ТЗ); Маркет — официальные правила
         # (<br> для абзацев, БЕЗ эмодзи, региона, доставки — иначе модерация режет)
-        fw_desc = generate_marketplace_description(
-            name, "mono" if is_mono else "author", color,
-            var.get("positions", []), packaging_label)
-        market_desc = generate_marketplace_description(
-            name, "mono" if is_mono else "author", color,
-            var.get("positions", []), packaging_label, platform="market")
+        if is_plant:
+            fw_desc = generate_plant_description(name, height_cm or 50, pot_cm)
+            market_desc = generate_plant_description(name, height_cm or 50, pot_cm,
+                                                     platform="market")
+        else:
+            fw_desc = generate_marketplace_description(
+                name, "mono" if is_mono else "author", color,
+                var.get("positions", []), packaging_label)
+            market_desc = generate_marketplace_description(
+                name, "mono" if is_mono else "author", color,
+                var.get("positions", []), packaging_label, platform="market")
         fw_status = "создан"
         fw_id = "—"
         try:
-            res = await fw_client.create_product(
-                name=fw_name,
-                price=platform_prices["flowwow"],
-                offer_id=full_art,
-                sub_category_id=flowwow_subcat,
-                photo_urls=uploaded_photo_urls,
-                consist=consist,
-                composition=composition_text,
-                description=fw_desc,
-                production_time=5,
-                width_cm=width_cm,
-                height_cm=var_height,
-                color=color
-            )
+            if is_plant:
+                # Растения (sub 14): stock вместо productionTime, БЕЗ consist,
+                # + растительные поля из схемы subCategoryProperties (26.11)
+                res = await fw_client.create_product(
+                    name=fw_name,
+                    price=platform_prices["flowwow"],
+                    offer_id=full_art,
+                    sub_category_id=flowwow_subcat,
+                    photo_urls=uploaded_photo_urls,
+                    description=fw_desc,
+                    width_cm=pot_cm or 20,
+                    height_cm=height_cm or 50,
+                    stock=int(var.get("stock") or 1),
+                    extra={
+                        "wateringFrequency": {"val": 1, "measure": 11},  # раз в неделю
+                        "careLevel": 1,          # минимальный
+                        "lightingApartment": 2,  # рассеянный свет
+                        "isFlowering": is_flowering_plant(name),
+                        "recommendation": "Яркий рассеянный свет; полив после подсыхания "
+                                          "верхнего слоя грунта; беречь от сквозняков.",
+                    },
+                )
+            else:
+                res = await fw_client.create_product(
+                    name=fw_name,
+                    price=platform_prices["flowwow"],
+                    offer_id=full_art,
+                    sub_category_id=flowwow_subcat,
+                    photo_urls=uploaded_photo_urls,
+                    consist=consist,
+                    composition=composition_text,
+                    description=fw_desc,
+                    production_time=5,
+                    width_cm=width_cm,
+                    height_cm=var_height,
+                    color=color
+                )
             fw_id = res.get("id", "ok")
         except FlowwowAPIError as e:
             fw_status = f"ошибка ({e})"
@@ -1514,29 +1592,44 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
         weight_g = 1000  # вес для Маркета всегда 1 кг (правило владельца)
         await asyncio.sleep(1)  # дать файлам гарантированно осесть на диск перед скачиванием Маркетом
         try:
-            await market_client.create_card(
-                offer_id=full_art,
-                name=market_name,
-                price=platform_prices["yandex_market"],
-                pictures=uploaded_photo_urls,
-                description=market_desc,
-                composition=composition_text,
-                total_flowers=stem_count,
-                height_cm=var_height,
-                size_label="" if is_mono else var["label"],
-                weight_kg=round(weight_g / 1000, 2),
-                diameter_cm=width_cm,
-                height_pack_cm=max(var_height + 10, 40),
-                okpd2=okpd2_info.get("code", "01.19.21.190"),
-                tnved="0201100008",
-                packaging=packaging_label,
-                color_value_id=color_vid,
-                bouquet_type="mono" if is_mono else "author",
-                flower_names=flower_names,
-                filter_color_id=filter_color_vid,
-                video_url=video_public_url,
-                width_cm=width_cm
-            )
+            if is_plant:
+                await market_client.create_plant_card(
+                    offer_id=full_art,
+                    name=market_name,
+                    price=platform_prices["yandex_market"],
+                    pictures=uploaded_photo_urls,
+                    description=market_desc,
+                    plant_name=name,
+                    height_cm=height_cm or 50,
+                    pot_cm=pot_cm or 17,
+                    flowering=is_flowering_plant(name),
+                    tnved=plant_tnved(name),
+                    video_url=video_public_url,
+                )
+            else:
+                await market_client.create_card(
+                    offer_id=full_art,
+                    name=market_name,
+                    price=platform_prices["yandex_market"],
+                    pictures=uploaded_photo_urls,
+                    description=market_desc,
+                    composition=composition_text,
+                    total_flowers=stem_count,
+                    height_cm=var_height,
+                    size_label="" if is_mono else var["label"],
+                    weight_kg=round(weight_g / 1000, 2),
+                    diameter_cm=width_cm,
+                    height_pack_cm=max(var_height + 10, 40),
+                    okpd2=okpd2_info.get("code", "01.19.21.190"),
+                    tnved="0201100008",
+                    packaging=packaging_label,
+                    color_value_id=color_vid,
+                    bouquet_type="mono" if is_mono else "author",
+                    flower_names=flower_names,
+                    filter_color_id=filter_color_vid,
+                    video_url=video_public_url,
+                    width_cm=width_cm
+                )
             market_status = "карточка отправлена (обработка)"
         except YandexMarketError as e:
             market_status = f"ошибка ({e})"
@@ -1546,16 +1639,18 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             name=name, variation_label=var["label"], is_mono=is_mono,
             price_eda=platform_prices["yandex_eda"],
             positions=dpos,
-            picture_urls=uploaded_photo_urls, description=eda_desc
+            picture_urls=uploaded_photo_urls, description=eda_desc,
+            is_plant=is_plant, pot_cm=pot_cm, height_cm=height_cm or 0
         )
         eda_ok = eda_csv.append_product(eda_row)
         eda_status = "в CSV" if eda_ok else "ошибка записи CSV"
 
         # --- Tilda: прямое создание через MCP ---
         tilda_seo = generate_tilda_seo_and_text(name, dpos)
+        tilda_title = name[:190] if is_plant else f"Букет «{name}»"[:190]
         tilda_status = await tilda_catalog.create_product(
             project_id=config.tilda_project_id,
-            title=f"Букет «{name}»"[:190],  # размер в названии Tilda не указываем (18.11)
+            title=tilda_title,  # размер в названии Tilda не указываем (18.11)
             price_tilda=platform_prices["tilda"],
             photo_urls=uploaded_photo_urls,
             tilda_categories=tilda_cats,
@@ -1604,6 +1699,8 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             "consist": composition_text,
             "width": width_cm,
             "height": var_height,
+            "pot_cm": pot_cm,
+            "stock": var.get("stock", ""),
             "status_flowwow": fw_status,
             "status_market": market_status,
             "status_eda": eda_status,

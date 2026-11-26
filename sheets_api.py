@@ -43,6 +43,15 @@ HEADERS_MAP = {
     "Доп. товары": [
         "Артикул", "Название", "Тип (Свеча/Открытка)", "Цена", "Себестоимость",
         "Маржа %", "Остаток", "Дата"
+    ],
+    "Растения": [
+        "Артикул", "Название", "Flowwow ID", "Ссылка Flowwow", "Базовая цена",
+        "Цена Flowwow", "Цена Еда (+30%)", "Цена Маркет (+50%)", "Цена Tilda/Карты (+10%)",
+        "Высота см", "Горшок Ø см", "Остаток",
+        "Категория Tilda", "ОКПД2 Код", "ОКПД2 Название", "ТН ВЭД",
+        "Статус Flowwow", "Статус Маркет", "Статус Еда", "Статус Tilda",
+        "Обложка (URL)", "Все фото (JSON)", "Папка Яндекс Диск",
+        "Дата создания", "Создатель (TG ID)"
     ]
 }
 
@@ -125,6 +134,34 @@ class GoogleSheetsManager:
                     item_data.get("consist", ""),
                     item_data.get("width", ""),
                     item_data.get("height", ""),
+                    item_data.get("status_flowwow", ""),
+                    item_data.get("status_market", ""),
+                    item_data.get("status_eda", ""),
+                    item_data.get("status_tilda", ""),
+                    item_data.get("cover_url", ""),
+                    item_data.get("all_photos", ""),
+                    item_data.get("disk_folder_url", ""),
+                    now_str,
+                    str(item_data.get("created_by_tg_id", ""))
+                ]
+            elif sheet_name == "Растения":
+                row = [
+                    item_data.get("full_article", ""),
+                    item_data.get("name", ""),
+                    str(item_data.get("flowwow_id", "")),
+                    item_data.get("flowwow_url", ""),
+                    item_data.get("price", 0),
+                    item_data.get("flowwow_price", ""),
+                    item_data.get("eda_price", ""),
+                    item_data.get("market_price", ""),
+                    item_data.get("tilda_price", ""),
+                    item_data.get("height", ""),
+                    item_data.get("pot_cm", ""),
+                    item_data.get("stock", ""),
+                    item_data.get("tilda_category", ""),
+                    item_data.get("okpd2_code", ""),
+                    item_data.get("okpd2_name", ""),
+                    item_data.get("tnved", ""),
                     item_data.get("status_flowwow", ""),
                     item_data.get("status_market", ""),
                     item_data.get("status_eda", ""),
