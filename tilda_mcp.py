@@ -123,6 +123,29 @@ class TildaCatalog:
         self._available = bool(self.client.token)
         self.last_report = ""  # детальная авто-проверка последнего товара
 
+    async def update_price(self, project_id: int, full_article: str, price: int) -> str:
+        """Точечное обновление цены товара каталога по SKU (= полному артикулу)."""
+        if not self._available:
+            return "MCP не настроен"
+        try:
+            raw = await self.client.call_tool("store_get_products_list",
+                                              {"projectid": project_id,
+                                               "filter": {"all": full_article}})
+            data = json.loads(raw)
+            uid = None
+            for p in data.get("products") or []:
+                if (p.get("sku") or "") == full_article:
+                    uid = p.get("uid")
+                    break
+            if not uid:
+                return "товар не найден по SKU"
+            await self.client.call_tool("store_save_products_field",
+                                        {"projectid": project_id, "productuid": str(uid),
+                                         "price": str(int(price))})
+            return "ок"
+        except Exception as e:
+            return f"ошибка ({str(e)[:120]})"
+
     async def create_product(
         self,
         *,

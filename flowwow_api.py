@@ -256,6 +256,10 @@ class FlowwowClient:
             raise FlowwowAPIError(f"Flowwow не-JSON [{resp.status_code}]: {resp.text[:250]}")
         if resp.status_code != 200:
             raise FlowwowAPIError(f"Flowwow [{resp.status_code}]: {data.get('message') or str(data)[:300]}")
+        summary = data.get("summary") or {}
+        if summary and not summary.get("success"):
+            msgs = [e.get("message") for e in (data.get("errors") or [])]
+            raise FlowwowAPIError(f"Flowwow отклонил обновление: {json.dumps(msgs, ensure_ascii=False)[:250]}")
         return {"success": True, "data": data}
 
     async def get_reviews(self, page: int = 1, per_page: int = 50) -> List[Dict[str, Any]]:

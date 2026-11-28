@@ -143,6 +143,27 @@ class EdaCsvManager:
     def __init__(self, csv_path: Path):
         self.csv_path = csv_path
 
+    def update_price(self, title_prefixes: List[str], new_price: int) -> int:
+        """Обновить цену (колонка 12) строк, чьё название начинается с одного из префиксов.
+        Возвращает число обновлённых строк."""
+        try:
+            if not self.csv_path.exists():
+                return 0
+            with open(self.csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.reader(f, delimiter=";"))
+            n = 0
+            for r in rows[1:]:
+                if len(r) > 11 and any(p and r[6].startswith(p) for p in title_prefixes):
+                    r[11] = str(int(new_price))
+                    n += 1
+            if n:
+                with open(self.csv_path, "w", encoding="utf-8-sig", newline="") as f:
+                    csv.writer(f, delimiter=";").writerows(rows)
+            return n
+        except Exception as e:
+            logger.error(f"Ошибка обновления цены в CSV Еды: {e}")
+            return 0
+
     def append_product(self, row: List[str]) -> bool:
         try:
             self.csv_path.parent.mkdir(parents=True, exist_ok=True)

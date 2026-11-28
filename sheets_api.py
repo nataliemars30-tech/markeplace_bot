@@ -87,6 +87,38 @@ class GoogleSheetsManager:
             self._client = gspread.authorize(creds)
         return self._client
 
+    def update_prices(self, sheet_name: str, full_article: str, prices: Dict[str, int]) -> bool:
+        """Обновить ценовые колонки строки по артикулу (колонка A).
+        prices: ключи base/flowwow/yandex_eda/yandex_market/tilda. True, если строка найдена."""
+        try:
+            client = self._get_client()
+            spreadsheet = client.open_by_key(self.spreadsheet_key) if self.spreadsheet_key else client.open("Каталог REN")
+            worksheet = spreadsheet.worksheet(sheet_name)
+            header = worksheet.row_values(1)
+            col_map = {}
+            for i, h in enumerate(header, 1):
+                if h.startswith("Базовая"):
+                    col_map["base"] = i
+                elif h.startswith("Цена Flowwow"):
+                    col_map["flowwow"] = i
+                elif h.startswith("Цена Еда"):
+                    col_map["yandex_eda"] = i
+                elif h.startswith("Цена Маркет"):
+                    col_map["yandex_market"] = i
+                elif h.startswith("Цена Tilda"):
+                    col_map["tilda"] = i
+            col_a = worksheet.col_values(1)
+            if full_article not in col_a:
+                return False
+            row_no = col_a.index(full_article) + 1
+            for key, col in col_map.items():
+                if key in prices:
+                    worksheet.update_cell(row_no, col, prices[key])
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка обновления цен в таблице ({sheet_name}/{full_article}): {e}")
+            return False
+
     def append_row(self, sheet_name: str, item_data: Dict[str, Any]) -> bool:
         """Добавление строки в соответствующий лист Google-таблицы."""
         try:

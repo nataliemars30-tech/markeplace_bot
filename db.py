@@ -57,6 +57,11 @@ def init_db() -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        # Колонка состава (28.11: нужна для безопасной смены цены полной карточкой Flowwow)
+        try:
+            cursor.execute("ALTER TABLE products ADD COLUMN consist_json TEXT;")
+        except sqlite3.OperationalError:
+            pass  # колонка уже есть
         conn.commit()
 
 
@@ -125,11 +130,70 @@ def get_product_by_article(full_article: str) -> Optional[Dict[str, Any]]:
     """Локальная запись товара по полному артикулу (для /sync)."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT base_article, full_article, name, variation, price, tilda_category, cover_url "
+            "SELECT base_article, full_article, root_category, name, variation, price, tilda_category, cover_url "
             "FROM products WHERE full_article = ? ORDER BY id DESC LIMIT 1;",
             (full_article,)
         ).fetchone()
         return dict(row) if row else None
+
+
+def get_variation_articles(base_article: str) -> List[str]:
+    """Полные артикулы всех вариаций базового артикула (REN-025 -> [REN-025-M, ...])."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT full_article FROM products WHERE base_article = ? ORDER BY full_article;",
+            (base_article,)
+        ).fetchall()
+        return [r["full_article"] for r in rows]
+
+
+def update_product_base_price(full_article: str, price: float) -> bool:
+    """Обновить базовую цену в локальной истории."""
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE products SET price = ? WHERE full_article = ?;",
+                           (price, full_article))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def set_product_consist(full_article: str, consist: List[Dict[str, Any]]) -> None:
+    """Сохранить состав (для полной пересборки карточки при смене цены)."""
+    import json as _json
+    with get_connection() as conn:
+        conn.execute("UPDATE products SET consist_json = ? WHERE full_article = ?;",
+                     (_json.dumps(consist, ensure_ascii=False), full_article))
+        conn.commit()
+
+
+def get_product_consist(full_article: str) -> Optional[List[Dict[str, Any]]]:
+    """Состав товара из локальной базы (None — неизвестен)."""
+    import json as _json
+    with get_connection() as conn:
+        row = conn.execute("SELECT consist_json FROM products WHERE full_article = ? "
+                           "ORDER BY id DESC LIMIT 1;", (full_article,)).fetchone()
+    if not row or not row["consist_json"]:
+        return None
+    try:
+        return _json.loads(row["consist_json"])
+    except Exception:
+        return None
+
+
+def backfill_consist(details: Dict[str, List[Dict[str, Any]]]) -> int:
+    """Разовое заполнение consist_json из fw_details.json (ключ — productId Flowwow)."""
+    import json as _json
+    n = 0
+    with get_connection() as conn:
+        for pid, consist in details.items():
+            if not consist:
+                continue
+            cur = conn.execute(
+                "UPDATE products SET consist_json = ? "
+                "WHERE flowwow_id = ? AND (consist_json IS NULL OR consist_json = '');",
+                (_json.dumps(consist, ensure_ascii=False), str(pid)))
+            n += cur.rowcount
+        conn.commit()
+    return n
 
 
 def get_next_article(root_category: str) -> str:

@@ -463,6 +463,42 @@ class YandexMarketClient:
             raise YandexMarketError(f"Маркет ERROR: {json.dumps(data, ensure_ascii=False)[:400]}")
         return {"success": True, "offerId": offer_id}
 
+    async def update_price(self, offer_id: str, price: int) -> Dict[str, Any]:
+        """Точечное обновление цены (offer-prices/updates, проверено 28.11) —
+        остальные поля карточки не затрагиваются."""
+        url = f"{self.BASE_URL}/businesses/{self.BUSINESS_ID}/offer-prices/updates"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                resp = await client.post(url, headers=self._headers(), json={
+                    "offers": [{"offerId": offer_id, "price": {
+                        "value": int(round(float(price))), "currencyId": "RUR"}}]})
+            except httpx.RequestError as e:
+                raise YandexMarketError(f"Сетевой сбой Маркета: {e}")
+        try:
+            data = resp.json()
+        except Exception:
+            raise YandexMarketError(f"Маркет вернул не-JSON [{resp.status_code}]: {resp.text[:250]}")
+        if resp.status_code != 200 or data.get("status") != "OK":
+            raise YandexMarketError(f"Маркет цены [{resp.status_code}]: {json.dumps(data, ensure_ascii=False)[:300]}")
+        return {"success": True}
+
+    async def get_price(self, offer_id: str) -> Optional[int]:
+        """Текущая цена оффера (для сверки после обновления)."""
+        url = f"{self.BASE_URL}/businesses/{self.BUSINESS_ID}/offer-mappings"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                resp = await client.post(url, headers=self._headers(),
+                                         json={"offerIds": [offer_id]})
+                data = resp.json()
+            except Exception:
+                return None
+        for om in (data.get("result") or {}).get("offerMappings") or []:
+            o = om.get("offer") or {}
+            if o.get("offerId") == offer_id:
+                v = (o.get("basicPrice") or {}).get("value")
+                return int(v) if v is not None else None
+        return None
+
     @staticmethod
     def _match_plant_value_id(plant_name: str):
         """Название растения -> (valueId, каноническое имя) из справочника Маркета."""

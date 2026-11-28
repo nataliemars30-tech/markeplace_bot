@@ -20,7 +20,7 @@ from aiogram.types import (
 from aiohttp import web
 
 from config import config
-from db import init_db, get_next_article, save_product_variation, save_review, mark_review_answered, get_pending_reviews, get_review_draft, get_product_by_article
+from db import init_db, get_next_article, save_product_variation, save_review, mark_review_answered, get_pending_reviews, get_review_draft, get_product_by_article, get_variation_articles, update_product_base_price, set_product_consist, get_product_consist, backfill_consist
 from yandex_disk import YandexDiskClient, YandexDiskError
 from moysklad_api import MoySkladClient, MoySkladAuthError, MoySkladAPIError
 from flowwow_api import FlowwowClient, FlowwowAPIError
@@ -1385,6 +1385,178 @@ def parse_author_caption(caption: str, sizes_mode: str):
     return name, variations
 
 
+# ------------------ Изменение цены на всех площадках ------------------
+def eda_title_candidates(rec: Dict[str, Any]) -> List[str]:
+    """Ожидаемые начала названий строки в CSV Еды для этого товара."""
+    name, var = rec.get("name") or "", str(rec.get("variation") or "")
+    if rec.get("root_category") == "Растения":
+        return [f"Комнатное растение {name} в горшке"]
+    if var.isdigit():
+        return [f"Букет из {var} {name}"]
+    return [f"Авторский букет «{name}» {var}".rstrip(), f"«{name}»"]
+
+
+def build_fw_update_item(cur: Dict[str, Any], rec: Dict[str, Any], new_price: int) -> Dict[str, Any]:
+    """Полная карточка Flowwow для update (API принимает только полную замену).
+    cur — карточка из листинга; состав — из локальной базы. productionTime
+    восстанавливаем из скаляра листинга: 0 = «в наличии» (stock), 1 = 1 минута,
+    2-9 = дни (measure 9), >10 = минуты (measure 7)."""
+    is_plant = rec.get("root_category") == "Растения"
+    item: Dict[str, Any] = {
+        "offerId": cur["offerId"],
+        "productType": cur.get("type") or 1,
+        "subCategoryId": cur.get("subCategoryId") or (14 if is_plant else 2),
+        "name": cur["name"],
+        "price": str(int(new_price)),
+        "discount": str(cur.get("discount") or "0"),
+        "description": cur.get("description") or "",
+        "images": cur.get("images") or [],
+        "minOrderCount": cur.get("minOrder") or 1,
+        "width": {"val": 35, "measure": 3},
+        "height": {"val": 45, "measure": 3},
+        "manufacturerName": "REN, Россия",
+        "manufacturerCountry": 1,
+    }
+    pt = cur.get("productionTime")
+    try:
+        pt = int(pt)
+    except (TypeError, ValueError):
+        pt = 1
+    if is_plant or pt == 0:
+        item["stock"] = max(1, int(cur.get("stock") or 1))
+    elif 2 <= pt <= 9:
+        item["productionTime"] = {"val": pt, "measure": 9}   # дни
+    elif pt > 10:
+        item["productionTime"] = {"val": pt, "measure": 7}   # минуты
+    else:
+        item["productionTime"] = {"val": 1, "measure": 7}    # «1 минута»
+    if is_plant:
+        item["thematicSelections"] = [1, 32, 33, 34, 40, 48, 53, 159]
+        item["wateringFrequency"] = {"val": 1, "measure": 11}
+        item["careLevel"] = 1
+        item["lightingApartment"] = 2
+        item["isFlowering"] = is_flowering_plant(rec.get("name") or "")
+        item["recommendation"] = ("Яркий рассеянный свет; полив после подсыхания "
+                                  "верхнего слоя грунта; беречь от сквозняков.")
+    else:
+        item["thematicSelections"] = [1, 150, 48, 53, 40, 32, 39, 33, 34, 102, 159]
+        consist = get_product_consist(rec["full_article"])
+        if not consist:
+            raise FlowwowAPIError("состав неизвестен локальной базе — Flowwow пропущен, "
+                                  "чтобы не затереть состав (правило инцидента 25.11)")
+        item["consist"] = [
+            {"name": c["name"], "val": int(c.get("quantity") or c.get("val") or 1),
+             "quantity": int(c.get("quantity") or c.get("val") or 1), "measure": 1}
+            for c in consist if c.get("name")
+        ]
+    return item
+
+
+@dp.message(Command("цена", "price"))
+@dp.message(F.text.regexp(r"(?i)^цена\s+\S"))
+async def start_price_change(message: types.Message):
+    parts = (message.text or "").split()
+    if len(parts) != 3 or not parts[2].isdigit() or int(parts[2]) <= 0:
+        await message.reply(
+            "Формат: <code>цена REN-025-M 6500</code>\n"
+            "6500 — новая <b>базовая</b> цена; по площадкам разведу по формулам "
+            "(Тильда ×1.1, Еда ×1.3, Маркет ×1.5, Flowwow (база+150)×1.5, растения ×1.4).",
+            parse_mode="HTML")
+        return
+    article, base = parts[1].upper(), int(parts[2])
+    rec = get_product_by_article(article)
+    if not rec:
+        variants = get_variation_articles(article)
+        if len(variants) == 1:
+            article = variants[0]
+            rec = get_product_by_article(article)
+        elif variants:
+            await message.reply(
+                f"У <b>{esc(article)}</b> несколько размеров: {esc(', '.join(variants))}.\n"
+                "Укажите полный артикул.", parse_mode="HTML")
+            return
+        else:
+            await message.reply(f"⚠️ Артикул {esc(article)} не найден в локальной базе бота.",
+                                parse_mode="HTML")
+            return
+    prices = calculate_platform_prices(base, rec["root_category"])
+    old_base = rec.get("price")
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Применить", callback_data=f"priceok:{article}:{base}"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="pricecancel")]])
+    await message.answer(
+        f"💰 <b>{esc(rec['name'])}</b> ({article})\n"
+        f"Базовая: {f'{old_base:.0f}' if old_base else '—'} → <b>{base}</b> ₽\n\n"
+        f"Flowwow: {prices['flowwow']} ₽\n"
+        f"Маркет: {prices['yandex_market']} ₽\n"
+        f"Tilda: {prices['tilda']} ₽\n"
+        f"Еда (CSV): {prices['yandex_eda']} ₽\n\n"
+        "Применить на всех площадках?",
+        reply_markup=kb, parse_mode="HTML")
+
+
+@dp.callback_query(F.data == "pricecancel")
+async def price_cancel(callback: types.CallbackQuery):
+    await callback.message.edit_text("❌ Изменение цены отменено.")
+
+
+@dp.callback_query(F.data.startswith("priceok:"))
+async def apply_price_change(callback: types.CallbackQuery):
+    _, article, base_s = callback.data.split(":")
+    base = int(base_s)
+    rec = get_product_by_article(article)
+    if not rec:
+        await callback.message.edit_text(f"⚠️ {article} не найден в базе.")
+        return
+    await callback.message.edit_reply_markup(reply_markup=None)
+    status_msg = await callback.message.answer(f"⏳ Меняю цену <b>{article}</b>...", parse_mode="HTML")
+    prices = calculate_platform_prices(base, rec["root_category"])
+    lines = []
+
+    # --- Flowwow (update = полная замена карточки: пересобираем из листинга + состава) ---
+    try:
+        cur = await fw_client.get_product(offer_id=article)
+        if not cur:
+            raise FlowwowAPIError("карточка не найдена в листинге")
+        item = build_fw_update_item(cur, rec, prices["flowwow"])
+        await fw_client.update_product(item)
+        await asyncio.sleep(1)
+        cur2 = await fw_client.get_product(offer_id=article)
+        got = int(float(cur2["price"])) if cur2 and cur2.get("price") else None
+        mark = "✅" if got == prices["flowwow"] else f"⚠️ чтение вернуло {got}"
+        lines.append(f"Flowwow: {prices['flowwow']} ₽ {mark}")
+    except Exception as e:
+        lines.append(f"Flowwow: ❌ {esc(str(e)[:120])}")
+
+    # --- Яндекс Маркет ---
+    try:
+        await market_client.update_price(article, prices["yandex_market"])
+        await asyncio.sleep(2)
+        got = await market_client.get_price(article)
+        mark = "✅" if got == prices["yandex_market"] else f"⚠️ чтение вернуло {got}"
+        lines.append(f"Маркет: {prices['yandex_market']} ₽ {mark}")
+    except Exception as e:
+        lines.append(f"Маркет: ❌ {esc(str(e)[:100])}")
+
+    # --- Tilda ---
+    tstatus = await tilda_catalog.update_price(config.tilda_project_id, article, prices["tilda"])
+    lines.append(f"Tilda: {prices['tilda']} ₽ {'✅' if tstatus == 'ок' else esc(tstatus)}")
+
+    # --- Яндекс Еда (CSV) ---
+    n = eda_csv.update_price(eda_title_candidates(rec), prices["yandex_eda"])
+    lines.append(f"Еда (CSV): {prices['yandex_eda']} ₽ — строк: {n}" if n
+                 else "Еда (CSV): ⚠️ строка не найдена")
+
+    # --- Локальная база и Google-таблица ---
+    update_product_base_price(article, base)
+    sheet_ok = sheets_mgr.update_prices(rec["root_category"], article, prices)
+    lines.append(f"Таблица: {'✅' if sheet_ok else '⚠️ строка не найдена'}")
+
+    await status_msg.edit_text(
+        f"💰 <b>{esc(rec['name'])}</b> ({article}) — базовая {base} ₽\n\n" + "\n".join(lines),
+        parse_mode="HTML")
+
+
 # ------------------ Публикация ------------------
 @dp.callback_query(F.data == "wizard:publish")
 async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
@@ -1738,6 +1910,9 @@ async def execute_publication(callback: types.CallbackQuery, state: FSMContext):
             video_url=video_public_url,
             created_by_tg_id=callback.from_user.id
         )
+        # Состав — в базу: нужен для полной пересборки карточки при смене цены (28.11)
+        if not is_plant:
+            set_product_consist(full_art, consist)
 
     shutil.rmtree(temp_work_dir, ignore_errors=True)
 
@@ -1911,6 +2086,15 @@ async def cmd_weekly_report(message: types.Message):
 async def main():
     logger.info("Инициализация локальной базы SQLite...")
     init_db()
+    # Разовое заполнение составов из снимка fw_details.json (для смены цен полной карточкой)
+    try:
+        details_path = config.base_dir / "fw_details.json"
+        if details_path.exists():
+            n = backfill_consist(json.loads(details_path.read_text(encoding="utf-8")))
+            if n:
+                logger.info(f"Составы: заполнено из fw_details.json — {n} товаров")
+    except Exception as e:
+        logger.warning(f"backfill составов: {e}")
     logger.info("Загрузка правил из Google-таблицы (лист «Правила»)...")
     from rules_sheet import load_rules
     load_rules()
